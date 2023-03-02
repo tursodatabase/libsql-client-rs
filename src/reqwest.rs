@@ -13,13 +13,36 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Establishes a database connection.
+    /// Establishes a database connection with JWT authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `username` - database username
     /// * `pass` - user's password
-    pub fn connect(
+    pub fn connect(url: impl Into<String>, token: impl Into<String>) -> Self {
+        let token = token.into();
+        let url = url.into();
+        // Auto-update the URL to start with https:// if no protocol was specified
+        let base_url = if !url.contains("://") {
+            "https://".to_owned() + &url
+        } else {
+            url
+        };
+        let url_for_queries = format!("{base_url}/queries");
+        Self {
+            base_url,
+            url_for_queries,
+            auth: format!("Bearer {token}"),
+        }
+    }
+
+    /// Establishes a database connection with Basic HTTP authentication.
+    ///
+    /// # Arguments
+    /// * `url` - URL of the database endpoint
+    /// * `username` - database username
+    /// * `pass` - user's password
+    pub fn connect_with_credentials(
         url: impl Into<String>,
         username: impl Into<String>,
         pass: impl Into<String>,
@@ -59,6 +82,12 @@ impl Connection {
     /// let db = Connection::connect_from_url(&url).unwrap();
     /// ```
     pub fn connect_from_url(url: &url::Url) -> anyhow::Result<Connection> {
+        let mut params = url.query_pairs();
+        // Try a token=XXX parameter first, continue if not found
+        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "token") {
+            return Ok(Connection::connect(url.as_str(), token.into_owned()));
+        }
+
         let username = url.username();
         let password = url.password().unwrap_or_default();
         let mut url = url.clone();
@@ -66,13 +95,22 @@ impl Connection {
             .map_err(|_| anyhow::anyhow!("Could not extract username from URL. Invalid URL?"))?;
         url.set_password(None)
             .map_err(|_| anyhow::anyhow!("Could not extract password from URL. Invalid URL?"))?;
-        Ok(Connection::connect(url.as_str(), username, password))
+        Ok(Connection::connect_with_credentials(
+            url.as_str(),
+            username,
+            password,
+        ))
     }
 
     pub fn connect_from_env() -> anyhow::Result<Connection> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
         })?;
+
+        if let Ok(token) = std::env::var("LIBSQL_CLIENT_TOKEN") {
+            return Ok(Connection::connect(url, token));
+        }
+
         let user = match std::env::var("LIBSQL_CLIENT_USER") {
             Ok(user) => user,
             Err(_) => {
@@ -82,7 +120,7 @@ impl Connection {
         let pass = std::env::var("LIBSQL_CLIENT_PASS").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_PASS variable should be set to your sqld password")
         })?;
-        Ok(Connection::connect(url, user, pass))
+        Ok(Connection::connect_with_credentials(url, user, pass))
     }
 }
 
