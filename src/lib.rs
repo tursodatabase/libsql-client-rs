@@ -193,11 +193,15 @@ pub(crate) fn parse_query_result(result: serde_json::Value, idx: usize) -> Resul
 /// # Example
 ///
 /// ```rust,no_run
+///   # async fn f() -> anyhow::Result<()> {
+///   # use crate::libsql_client::{Connection, Statement, params};
 ///   let db = libsql_client::connect()?;
 ///   db.execute(
-///       "INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
-///       params!(64, "socks", 2, 4.5),
+///       Statement::with_params("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
+///       params!(64, "socks", 2, 4.5)),
 ///   ).await?;
+///   # Ok(())
+///   # }
 /// ```
 #[macro_export]
 macro_rules! params {

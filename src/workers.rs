@@ -18,8 +18,7 @@ impl Connection {
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
-    /// * `username` - database username
-    /// * `pass` - user's password
+    /// * `token` - auth token
     pub fn connect(url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
