@@ -22,7 +22,7 @@ impl std::fmt::Display for Value {
             Value::Null => write!(f, "null"),
             Value::Integer(n) => write!(f, "{n}"),
             Value::Real(d) => write!(f, "{d}"),
-            Value::Text(s) => write!(f, "\"{s}\""),
+            Value::Text(s) => write!(f, "{}", serde_json::json!(s)),
             Value::Blob(b) => {
                 let b = BASE64_STANDARD_NO_PAD.encode(b);
                 write!(f, "{{\"base64\": {b}}}")
