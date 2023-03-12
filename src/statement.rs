@@ -60,13 +60,13 @@ impl From<&&str> for Statement {
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.params.is_empty() {
-            write!(f, "\"{}\"", self.q)
+            write!(f, "{}", serde_json::json!(self.q))
         } else {
             let params: Vec<String> = self.params.iter().map(|p| p.to_string()).collect();
             write!(
                 f,
-                "{{\"q\": \"{}\", \"params\": [{}]}}",
-                self.q,
+                "{{\"q\": {}, \"params\": [{}]}}",
+                serde_json::json!(self.q),
                 params.join(",")
             )
         }
