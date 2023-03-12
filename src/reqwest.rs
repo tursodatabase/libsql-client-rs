@@ -149,6 +149,9 @@ impl super::Connection for Connection {
                     .await?
             }
         };
+        if response.status() != reqwest::StatusCode::OK {
+            anyhow::bail!("{}", response.status());
+        }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
         crate::connection::json_to_query_result(response_json, stmts_count)

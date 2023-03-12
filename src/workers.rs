@@ -174,6 +174,9 @@ impl Connection {
                     .await?
             }
         };
+        if response.status_code() != 200 {
+            return Err(worker::Error::from(format!("{}", response.status_code())));
+        }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
         super::connection::json_to_query_result(response_json, stmts_count)
