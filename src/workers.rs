@@ -28,7 +28,11 @@ impl Connection {
         } else {
             url
         };
-        let url_for_queries = format!("{base_url}/queries");
+        let url_for_queries = if cfg!(feature = "separate_url_for_queries") {
+            format!("{base_url}/queries")
+        } else {
+            base_url.clone()
+        };
         Self {
             base_url,
             url_for_queries,
@@ -56,7 +60,11 @@ impl Connection {
         } else {
             url
         };
-        let url_for_queries = format!("{base_url}/queries");
+        let url_for_queries = if cfg!(feature = "separate_url_for_queries") {
+            format!("{base_url}/queries")
+        } else {
+            base_url.clone()
+        };
         Self {
             base_url,
             url_for_queries,

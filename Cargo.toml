@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -27,6 +27,7 @@ default = ["local_backend", "reqwest_backend"]
 workers_backend = ["worker"]
 reqwest_backend = ["reqwest"]
 local_backend = ["rusqlite"]
+separate_url_for_queries = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
