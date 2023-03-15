@@ -72,9 +72,8 @@ macro_rules! impl_value_try_from {
             fn try_from(v: Value) -> Result<$typename, Self::Error> {
                 match v {
                     Value::$variant(v) => v.try_into().map_err(|e| format!("{e}")),
-                    _ => Err(format!(
-                        "cannot transform {} to {}",
-                        stringify!($typename),
+                    other => Err(format!(
+                        "cannot transform {other:?} to {}",
                         stringify!($variant)
                     )),
                 }
