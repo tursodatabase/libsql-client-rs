@@ -148,13 +148,17 @@ impl super::Connection for Connection {
         {
             Ok(resp) if resp.status() == reqwest::StatusCode::OK => resp,
             // Retry with the legacy route: "/"
-            _ => {
-                client
-                    .post(&self.base_url)
-                    .body(body)
-                    .header("Authorization", &self.auth)
-                    .send()
-                    .await?
+            resp => {
+                if cfg!(feature = "separate_url_for_queries") {
+                    client
+                        .post(&self.base_url)
+                        .body(body)
+                        .header("Authorization", &self.auth)
+                        .send()
+                        .await?
+                } else {
+                    anyhow::bail!("{}", resp?.status());
+                }
             }
         };
         if response.status() != reqwest::StatusCode::OK {

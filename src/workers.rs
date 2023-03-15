@@ -176,10 +176,14 @@ impl Connection {
         let mut response = match response {
             Ok(r) if r.status_code() == 200 => r,
             // Retry with the legacy route: "/"
-            _ => {
-                Fetch::Request(Request::new_with_init(&self.base_url, &request_init)?)
-                    .send()
-                    .await?
+            resp => {
+                if cfg!(feature = "separate_url_for_queries") {
+                    Fetch::Request(Request::new_with_init(&self.base_url, &request_init)?)
+                        .send()
+                        .await?
+                } else {
+                    return Err(worker::Error::from(format!("{}", resp?.status_code())));
+                }
             }
         };
         if response.status_code() != 200 {
