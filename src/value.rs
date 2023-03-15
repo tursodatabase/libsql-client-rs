@@ -74,7 +74,7 @@ macro_rules! impl_value_try_from {
                     Value::$variant(v) => v.try_into().map_err(|e| format!("{e}")),
                     _ => Err(format!(
                         "cannot transform {} to {}",
-                        stringify!($ty),
+                        stringify!($typename),
                         stringify!($variant)
                     )),
                 }
