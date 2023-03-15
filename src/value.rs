@@ -64,3 +64,36 @@ impl_from_value!(f32, Real);
 impl_from_value!(f64, Real);
 
 impl_from_value!(Vec<u8>, Blob);
+
+macro_rules! impl_value_try_from {
+    ($variant: ident, $typename: ty) => {
+        impl TryFrom<Value> for $typename {
+            type Error = String;
+            fn try_from(v: Value) -> Result<$typename, Self::Error> {
+                match v {
+                    Value::$variant(v) => v.try_into().map_err(|e| format!("{e}")),
+                    _ => Err(format!(
+                        "cannot transform {} to {}",
+                        stringify!($ty),
+                        stringify!($variant)
+                    )),
+                }
+            }
+        }
+    };
+}
+
+impl_value_try_from!(Text, String);
+
+impl_value_try_from!(Integer, i8);
+impl_value_try_from!(Integer, i16);
+impl_value_try_from!(Integer, i32);
+impl_value_try_from!(Integer, i64);
+impl_value_try_from!(Integer, u8);
+impl_value_try_from!(Integer, u16);
+impl_value_try_from!(Integer, u32);
+impl_value_try_from!(Integer, u64);
+
+impl_value_try_from!(Real, f64);
+
+impl_value_try_from!(Blob, Vec<u8>);
