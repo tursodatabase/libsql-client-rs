@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.6.6"
+version = "0.6.7"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -32,6 +32,9 @@ local_backend = ["rusqlite"]
 tokio = { version = "1", features = ["full"] }
 libsql-client = { path = ".", features = ["reqwest_backend", "local_backend"] }
 rand = "0.8.5"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [[example]]
 name = "select"
