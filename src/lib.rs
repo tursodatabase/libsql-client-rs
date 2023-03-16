@@ -32,6 +32,9 @@ pub mod reqwest;
 #[cfg(feature = "local_backend")]
 pub mod local;
 
+#[cfg(feature = "spin_backend")]
+pub mod spin;
+
 /// Metadata of a database request
 #[derive(Clone, Debug, Default)]
 pub struct Meta {

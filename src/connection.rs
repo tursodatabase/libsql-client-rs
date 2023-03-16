@@ -65,6 +65,8 @@ pub enum GenericConnection {
     Reqwest(super::reqwest::Connection),
     #[cfg(feature = "workers_backend")]
     Workers(super::workers::Connection),
+    #[cfg(feature = "spin_backend")]
+    Spin(super::spin::Connection),
 }
 
 #[async_trait(?Send)]
@@ -80,6 +82,8 @@ impl Connection for GenericConnection {
             Self::Reqwest(r) => r.batch(stmts).await,
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.batch(stmts).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(s) => s.batch(stmts).await,
         }
     }
 }
@@ -120,6 +124,8 @@ pub fn connect() -> anyhow::Result<GenericConnection> {
                 "reqwest"
             } else if cfg!(feature = "workers_backend") {
                 "workers"
+            } else if cfg!(feature = "spin_backend") {
+                "spin"
             } else {
                 "local"
             }
@@ -141,6 +147,10 @@ pub fn connect() -> anyhow::Result<GenericConnection> {
         #[cfg(feature = "workers_backend")]
         "workers" => {
             anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Connection::connect_from_ctx() directly")
+        },
+        #[cfg(feature = "spin_backend")]
+        "spin" => {
+            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Connection::connect_from_url() directly")
         },
         _ => anyhow::bail!("Unknown backend: {backend}. Make sure your backend exists and is enabled with its feature flag"),
     })

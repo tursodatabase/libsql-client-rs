@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.7.4"
+version = "0.7.5"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -15,6 +15,9 @@ base64 = "0.21.0"
 num-traits = "0.2.15"
 serde_json = "1.0.91"
 worker = { version = "0.0.12", optional = true }
+spin-sdk = { version = "0", git = "https://github.com/fermyon/spin", tag = "v0.8.0", optional = true }
+http = { version = "0.2", optional = true }
+bytes = { version = "1.4.0", optional = true }
 anyhow = "1.0.69"
 async-trait = "0.1.64"
 reqwest = { version = "0.11.14", optional = true, default-features = false, features = ["rustls-tls"] }
@@ -27,6 +30,7 @@ default = ["local_backend", "reqwest_backend"]
 workers_backend = ["worker"]
 reqwest_backend = ["reqwest"]
 local_backend = ["rusqlite"]
+spin_backend = ["spin-sdk", "http", "bytes"]
 separate_url_for_queries = []
 
 [dev-dependencies]
