@@ -3,10 +3,10 @@ use async_trait::async_trait;
 
 use rusqlite::types::Value as RusqliteValue;
 
-/// Database connection. This is the main structure used to
+/// Database client. This is the main structure used to
 /// communicate with the database.
 #[derive(Debug)]
-pub struct Connection {
+pub struct Client {
     inner: rusqlite::Connection,
 }
 
@@ -34,12 +34,12 @@ impl From<RusqliteValue> for Value {
     }
 }
 
-impl Connection {
-    /// Establishes a database connection.
+impl Client {
+    /// Establishes a database client.
     ///
     /// # Arguments
     /// * `path` - path of the local database
-    pub fn connect(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+    pub fn new(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         Ok(Self {
             inner: rusqlite::Connection::open(path).map_err(|e| anyhow::anyhow!("{e}"))?,
         })
@@ -52,7 +52,7 @@ impl Connection {
         })
     }
 
-    pub fn connect_from_env() -> anyhow::Result<Self> {
+    pub fn from_env() -> anyhow::Result<Self> {
         let path = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
         })?;
@@ -60,7 +60,7 @@ impl Connection {
             Some(path) => path,
             None => anyhow::bail!("Local URL needs to start with file:///"),
         };
-        Self::connect(path)
+        Self::new(path)
     }
 
     /// Executes a batch of SQL statements.
@@ -74,7 +74,7 @@ impl Connection {
     ///
     /// ```
     /// # async fn f() {
-    /// let db = libsql_client::local::Connection::connect("/tmp/example321.db").unwrap();
+    /// let db = libsql_client::local::Client::new("/tmp/example321.db").unwrap();
     /// let result = db
     ///     .batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"])
     ///     .await;
@@ -125,7 +125,7 @@ impl Connection {
 }
 
 #[async_trait(?Send)]
-impl super::Connection for Connection {
+impl super::DatabaseClient for Client {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{connect, params, Connection, QueryResult, ResultSet, Statement};
+use libsql_client::{new_client, params, DatabaseClient, QueryResult, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: QueryResult) -> Result<String> {
@@ -19,7 +19,7 @@ fn result_to_string(query_result: QueryResult) -> Result<String> {
 }
 
 // Bumps a counter for one of the geographic locations picked at random.
-async fn bump_counter(db: impl Connection) -> Result<String> {
+async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     // Recreate the tables if they do not exist yet
     db.batch([
         "CREATE TABLE IF NOT EXISTS counter(country TEXT, city TEXT, value, PRIMARY KEY(country, city)) WITHOUT ROWID",
@@ -64,12 +64,12 @@ async fn bump_counter(db: impl Connection) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
-    let db = connect().unwrap();
+    let db = new_client().unwrap();
     let response = bump_counter(db)
         .await
         .unwrap_or_else(|e| format!("Error: {e}"));
     println!(
-        "Connection parameters: backend={:?} url={:?}\n{response}",
+        "Client parameters: backend={:?} url={:?}\n{response}",
         std::env::var("LIBSQL_CLIENT_BACKEND"),
         std::env::var("LIBSQL_CLIENT_URL")
     );

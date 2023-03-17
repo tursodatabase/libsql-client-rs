@@ -9,9 +9,9 @@ At the moment the library works with the following backends:
 
 ## Quickstart
 
-In order to use the database in your project, just call `libsql_client::connect()`:
+In order to use the database in your project, just call `libsql_client::new_client()`:
 ```rust
-    let db = libsql_client::connect()?;
+    let db = libsql_client::new_client()?;
 ```
 
 The only thing you need to provide is an env variable with the database URL, e.g.
@@ -40,7 +40,7 @@ cargo add libsql-client
 
 Example for how to connect to the database and perform a query:
 ```rust
-    let db = libsql_client::local::Connection::connect_from_env()?;
+    let db = libsql_client::local::Client::from_env()?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;
@@ -67,7 +67,7 @@ cargo add libsql-client
 
 Example for how to connect to the database and perform a query from a GET handler:
 ```rust
-    let db = libsql_client::reqwest::Connection::connect_from_env()?;
+    let db = libsql_client::reqwest::Client::connect_from_env()?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;
@@ -92,7 +92,7 @@ cargo add libsql-client --no-default-features -F workers_backend
 Example for how to connect to the database and perform a query from a GET handler:
 ```rust
 router.get_async("/", |_, ctx| async move {
-    let db = libsql_client::workers::Connection::connect_from_ctx(&ctx)?;
+    let db = libsql_client::workers::Client::connect_from_ctx(&ctx)?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;

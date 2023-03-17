@@ -3,22 +3,22 @@ use base64::Engine;
 
 use super::{QueryResult, Statement};
 
-/// Database connection. This is the main structure used to
+/// Database client. This is the main structure used to
 /// communicate with the database.
 #[derive(Clone, Debug)]
-pub struct Connection {
+pub struct Client {
     base_url: String,
     url_for_queries: String,
     auth: String,
 }
 
-impl Connection {
-    /// Establishes a database connection with JWT authentication.
+impl Client {
+    /// Creates a database client with JWT authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub fn connect(url: impl Into<String>, token: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
@@ -39,13 +39,13 @@ impl Connection {
         }
     }
 
-    /// Establishes a database connection with Basic HTTP authentication.
+    /// Creates a database client with Basic HTTP authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `username` - database username
     /// * `pass` - user's password
-    pub fn connect_with_credentials(
+    pub fn from_credentials(
         url: impl Into<String>,
         username: impl Into<String>,
         pass: impl Into<String>,
@@ -74,7 +74,7 @@ impl Connection {
         }
     }
 
-    /// Establishes a database connection, given a `Url`
+    /// Establishes a database client, given a `Url`
     ///
     /// # Arguments
     /// * `url` - `Url` object of the database endpoint. This cannot be a relative URL;
@@ -82,17 +82,17 @@ impl Connection {
     /// # Examples
     ///
     /// ```
-    /// # use libsql_client::reqwest::Connection;
+    /// # use libsql_client::reqwest::Client;
     /// use url::Url;
     ///
     /// let url  = Url::parse("https://foo:bar@localhost:8080").unwrap();
-    /// let db = Connection::connect_from_url(&url).unwrap();
+    /// let db = Client::from_url(&url).unwrap();
     /// ```
-    pub fn connect_from_url(url: &url::Url) -> anyhow::Result<Connection> {
+    pub fn from_url(url: &url::Url) -> anyhow::Result<Client> {
         let mut params = url.query_pairs();
         // Try a token=XXX parameter first, continue if not found
         if let Some((_, token)) = params.find(|(param_key, _)| param_key == "token") {
-            return Ok(Connection::connect(url.as_str(), token.into_owned()));
+            return Ok(Client::new(url.as_str(), token.into_owned()));
         }
 
         let username = url.username();
@@ -102,42 +102,38 @@ impl Connection {
             .map_err(|_| anyhow::anyhow!("Could not extract username from URL. Invalid URL?"))?;
         url.set_password(None)
             .map_err(|_| anyhow::anyhow!("Could not extract password from URL. Invalid URL?"))?;
-        Ok(Connection::connect_with_credentials(
-            url.as_str(),
-            username,
-            password,
-        ))
+        Ok(Client::from_credentials(url.as_str(), username, password))
     }
 
-    pub fn connect_from_env() -> anyhow::Result<Connection> {
+    pub fn from_env() -> anyhow::Result<Client> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
         })?;
 
         if let Ok(token) = std::env::var("LIBSQL_CLIENT_TOKEN") {
-            return Ok(Connection::connect(url, token));
+            return Ok(Client::new(url, token));
         }
 
         let user = match std::env::var("LIBSQL_CLIENT_USER") {
             Ok(user) => user,
             Err(_) => {
-                return Connection::connect_from_url(&url::Url::parse(&url)?);
+                return Client::from_url(&url::Url::parse(&url)?);
             }
         };
         let pass = std::env::var("LIBSQL_CLIENT_PASS").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_PASS variable should be set to your sqld password")
         })?;
-        Ok(Connection::connect_with_credentials(url, user, pass))
+        Ok(Client::from_credentials(url, user, pass))
     }
 }
 
 #[async_trait(?Send)]
-impl super::Connection for Connection {
+impl super::DatabaseClient for Client {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<Vec<QueryResult>> {
-        let (body, stmts_count) = crate::connection::statements_to_string(stmts);
+        let (body, stmts_count) = crate::client::statements_to_string(stmts);
         let client = reqwest::Client::new();
         let response = match client
             .post(&self.url_for_queries)
@@ -166,6 +162,6 @@ impl super::Connection for Connection {
         }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        crate::connection::json_to_query_result(response_json, stmts_count)
+        crate::client::json_to_query_result(response_json, stmts_count)
     }
 }

@@ -1,4 +1,4 @@
-//! `Connection` is the main structure to interact with the database.
+//! `Client` is the main structure to interact with the database.
 
 use async_trait::async_trait;
 
@@ -6,10 +6,10 @@ use anyhow::Result;
 
 use super::{parse_query_result, QueryResult, Statement};
 
-/// Trait describing capabilities of a database connection:
+/// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
 #[async_trait(?Send)]
-pub trait Connection {
+pub trait DatabaseClient {
     /// Executes a single SQL statement
     ///
     /// # Arguments
@@ -55,22 +55,22 @@ pub trait Connection {
     }
 }
 
-/// A generic connection struct, wrapping possible backends.
+/// A generic client struct, wrapping possible backends.
 /// It's a convenience struct which allows implementing connect()
 /// with backends being passed as env parameters.
-pub enum GenericConnection {
+pub enum GenericClient {
     #[cfg(feature = "local_backend")]
-    Local(super::local::Connection),
+    Local(super::local::Client),
     #[cfg(feature = "reqwest_backend")]
-    Reqwest(super::reqwest::Connection),
+    Reqwest(super::reqwest::Client),
     #[cfg(feature = "workers_backend")]
-    Workers(super::workers::Connection),
+    Workers(super::workers::Client),
     #[cfg(feature = "spin_backend")]
-    Spin(super::spin::Connection),
+    Spin(super::spin::Client),
 }
 
 #[async_trait(?Send)]
-impl Connection for GenericConnection {
+impl DatabaseClient for GenericClient {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
@@ -88,7 +88,7 @@ impl Connection for GenericConnection {
     }
 }
 
-/// Establishes a database connection based on environment variables
+/// Establishes a database client based on environment variables
 ///
 /// # Env
 /// * `LIBSQL_CLIENT_URL` - URL of the database endpoint - e.g. a https:// endpoint for remote connections
@@ -100,21 +100,11 @@ impl Connection for GenericConnection {
 /// # Examples
 ///
 /// ```
-/// # use libsql_client::Connection;
+/// # use libsql_client::DatabaseClient;
 /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
-/// let db = libsql_client::connect().unwrap();
+/// let db = libsql_client::new_client().unwrap();
 /// ```
-pub fn connect() -> anyhow::Result<GenericConnection> {
-    /*
-    #[cfg(feature = "workers_backend")]
-    pub mod workers;
-
-    #[cfg(feature = "reqwest_backend")]
-    pub mod reqwest;
-
-    #[cfg(feature = "local_backend")]
-    pub mod local;
-        */
+pub fn new_client() -> anyhow::Result<GenericClient> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
         anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
     })?;
@@ -138,19 +128,19 @@ pub fn connect() -> anyhow::Result<GenericConnection> {
     Ok(match backend.as_str() {
         #[cfg(feature = "local_backend")]
         "local" => {
-            GenericConnection::Local(super::local::Connection::connect(url)?)
+            GenericClient::Local(super::local::Client::new(url)?)
         },
         #[cfg(feature = "reqwest_backend")]
         "reqwest" => {
-            GenericConnection::Reqwest(super::reqwest::Connection::connect_from_url(&url::Url::parse(&url)?)?)
+            GenericClient::Reqwest(super::reqwest::Client::from_url(&url::Url::parse(&url)?)?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Connection::connect_from_ctx() directly")
+            anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::connect_from_ctx() directly")
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
-            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Connection::connect_from_url() directly")
+            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::connect_from_url() directly")
         },
         _ => anyhow::bail!("Unknown backend: {backend}. Make sure your backend exists and is enabled with its feature flag"),
     })

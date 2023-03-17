@@ -4,22 +4,22 @@ use worker::*;
 
 use super::{QueryResult, Statement};
 
-/// Database connection. This is the main structure used to
+/// Database client. This is the main structure used to
 /// communicate with the database.
 #[derive(Clone, Debug)]
-pub struct Connection {
+pub struct Client {
     base_url: String,
     url_for_queries: String,
     auth: String,
 }
 
-impl Connection {
-    /// Establishes a database connection with JWT authentication.
+impl Client {
+    /// Creates a database client with JWT authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub fn connect(url: impl Into<String>, token: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
@@ -40,13 +40,13 @@ impl Connection {
         }
     }
 
-    /// Establishes a database connection with Basic HTTP authentication.
+    /// Creates a database client with Basic HTTP authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `username` - database username
     /// * `pass` - user's password
-    pub fn connect_with_credentials(
+    pub fn from_credentials(
         url: impl Into<String>,
         username: impl Into<String>,
         pass: impl Into<String>,
@@ -75,7 +75,7 @@ impl Connection {
         }
     }
 
-    /// Establishes a database connection, given a `Url`
+    /// Establishes a database client, given a `Url`
     ///
     /// # Arguments
     /// * `url` - `Url` object of the database endpoint. This cannot be a relative URL;
@@ -83,17 +83,17 @@ impl Connection {
     /// # Examples
     ///
     /// ```
-    /// # use libsql_client::reqwest::Connection;
+    /// # use libsql_client::reqwest::Client;
     /// use url::Url;
     ///
     /// let url  = Url::parse("https://foo:bar@localhost:8080").unwrap();
-    /// let db = Connection::connect_from_url(&url).unwrap();
+    /// let db = Client::from_url(&url).unwrap();
     /// ```
-    pub fn connect_from_url(url: &url::Url) -> anyhow::Result<Connection> {
+    pub fn from_url(url: &url::Url) -> anyhow::Result<Client> {
         let mut params = url.query_pairs();
         // Try a token=XXX parameter first, continue if not found
         if let Some((_, token)) = params.find(|(param_key, _)| param_key == "token") {
-            return Ok(Connection::connect(url.as_str(), token.into_owned()));
+            return Ok(Client::new(url.as_str(), token.into_owned()));
         }
 
         let username = url.username();
@@ -103,23 +103,19 @@ impl Connection {
             .map_err(|_| anyhow::anyhow!("Could not extract username from URL. Invalid URL?"))?;
         url.set_password(None)
             .map_err(|_| anyhow::anyhow!("Could not extract password from URL. Invalid URL?"))?;
-        Ok(Connection::connect_with_credentials(
-            url.as_str(),
-            username,
-            password,
-        ))
+        Ok(Client::from_credentials(url.as_str(), username, password))
     }
 
-    /// Establishes a database connection from Cloudflare Workers context.
+    /// Establishes a database client from Cloudflare Workers context.
     /// Expects the context to contain the following secrets defined:
     /// * `LIBSQL_CLIENT_URL`
     /// * `LIBSQL_CLIENT_USER`
     /// * `LIBSQL_CLIENT_PASS`
     /// # Arguments
     /// * `ctx` - Cloudflare Workers route context
-    pub fn connect_from_ctx<D>(ctx: &worker::RouteContext<D>) -> anyhow::Result<Self> {
+    pub fn from_ctx<D>(ctx: &worker::RouteContext<D>) -> anyhow::Result<Self> {
         if let Ok(token) = ctx.secret("LIBSQL_CLIENT_TOKEN") {
-            return Ok(Self::connect(
+            return Ok(Self::new(
                 ctx.secret("LIBSQL_CLIENT_URL")
                     .map_err(|e| anyhow::anyhow!("{e}"))?
                     .to_string(),
@@ -127,7 +123,7 @@ impl Connection {
             ));
         }
 
-        Ok(Self::connect_with_credentials(
+        Ok(Self::from_credentials(
             ctx.secret("LIBSQL_CLIENT_URL")
                 .map_err(|e| anyhow::anyhow!("{e}"))?
                 .to_string(),
@@ -151,7 +147,7 @@ impl Connection {
     ///
     /// ```
     /// # async fn f() {
-    /// let db = libsql_client::Connection::connect("https://example.com", "admin", "s3cr3tp4ss");
+    /// let db = libsql_client::Client::from_credentials("https://example.com", "admin", "s3cr3tp4ss");
     /// let result = db
     ///     .batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"])
     ///     .await;
@@ -163,7 +159,7 @@ impl Connection {
     ) -> Result<Vec<QueryResult>> {
         let mut headers = Headers::new();
         headers.append("Authorization", &self.auth).ok();
-        let (body, stmts_count) = crate::connection::statements_to_string(stmts);
+        let (body, stmts_count) = crate::client::statements_to_string(stmts);
         let request_init = RequestInit {
             body: Some(wasm_bindgen::JsValue::from_str(&body)),
             headers,
@@ -191,13 +187,13 @@ impl Connection {
         }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        super::connection::json_to_query_result(response_json, stmts_count)
+        super::client::json_to_query_result(response_json, stmts_count)
             .map_err(|e| worker::Error::from(format!("Error: {} ({:?})", e, request_init.body)))
     }
 }
 
 #[async_trait(?Send)]
-impl super::Connection for Connection {
+impl super::DatabaseClient for Client {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
