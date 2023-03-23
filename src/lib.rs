@@ -21,7 +21,7 @@ pub mod value;
 pub use value::Value;
 
 pub mod client;
-pub use client::{new_client, DatabaseClient};
+pub use client::{new_client, new_client_from_config, Config, DatabaseClient};
 
 #[cfg(feature = "workers_backend")]
 pub mod workers;

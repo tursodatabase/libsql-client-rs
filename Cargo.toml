@@ -49,4 +49,8 @@ path = "examples/select.rs"
 name = "connect_from_env"
 path = "examples/connect_from_env.rs"
 
+[[example]]
+name = "connect_from_config"
+path = "examples/connect_from_config.rs"
+
 [workspace]

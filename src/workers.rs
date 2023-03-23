@@ -1,3 +1,4 @@
+use super::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 use worker::*;
@@ -75,7 +76,12 @@ impl Client {
         }
     }
 
-    /// Establishes a database client, given a `Url`
+    /// Creates a database client from a `Config` object.
+    pub fn from_config(config: Config) -> Self {
+        Self::new(config.url, config.token.unwrap_or_default())
+    }
+
+    /// Creates a database client, given a `Url`
     ///
     /// # Arguments
     /// * `url` - `Url` object of the database endpoint. This cannot be a relative URL;
