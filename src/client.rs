@@ -6,6 +6,11 @@ use anyhow::Result;
 
 use super::{parse_query_result, QueryResult, Statement};
 
+pub struct ClientConfig {
+    url: String,
+    backend: String,
+}
+
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
 #[async_trait(?Send)]
@@ -125,6 +130,14 @@ pub fn new_client() -> anyhow::Result<GenericClient> {
         }
         .to_string()
     });
+    let config = ClientConfig { url, backend };
+    new_client_with_config(&config)
+}
+
+/// Establishes a database client based on `Config` object.
+pub fn new_client_with_config(config: &ClientConfig) -> anyhow::Result<GenericClient> {
+    let url = config.url.to_owned();
+    let backend = config.backend.to_owned();
     Ok(match backend.as_str() {
         #[cfg(feature = "local_backend")]
         "local" => {
