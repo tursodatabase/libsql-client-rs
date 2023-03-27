@@ -90,7 +90,7 @@ impl DatabaseClient for GenericClient {
 
 pub struct Config {
     pub url: url::Url,
-    pub token: Option<String>,
+    pub auth_token: Option<String>,
 }
 
 pub fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {

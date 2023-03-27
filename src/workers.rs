@@ -78,7 +78,7 @@ impl Client {
 
     /// Creates a database client from a `Config` object.
     pub fn from_config(config: Config) -> Self {
-        Self::new(config.url, config.token.unwrap_or_default())
+        Self::new(config.url, config.auth_token.unwrap_or_default())
     }
 
     /// Creates a database client, given a `Url`
