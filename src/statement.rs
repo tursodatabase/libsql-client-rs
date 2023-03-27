@@ -62,7 +62,11 @@ impl std::fmt::Display for Statement {
         if self.params.is_empty() {
             write!(f, "{}", serde_json::json!(self.q))
         } else {
-            let params: Vec<String> = self.params.iter().map(|p| p.to_string()).collect();
+            let params: Vec<String> = self
+                .params
+                .iter()
+                .map(|p| serde_json::json!(p).to_string())
+                .collect();
             write!(
                 f,
                 "{{\"q\": {}, \"params\": [{}]}}",

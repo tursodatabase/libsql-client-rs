@@ -42,21 +42,21 @@ pub struct Meta {
 }
 
 /// A database row
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Row {
     pub cells: HashMap<String, Value>,
 }
 
 /// Structure holding a set of rows returned from a query
 /// and their corresponding column names
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ResultSet {
     pub columns: Vec<String>,
     pub rows: Vec<Row>,
 }
 
 /// Result of a database request - a set of rows or an error
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum QueryResult {
     Error((String, Meta)),
     Success((ResultSet, Meta)),
@@ -100,15 +100,15 @@ pub(crate) fn parse_value(
     match cell {
         serde_json::Value::Null => Ok(Value::Null),
         serde_json::Value::Number(v) => match v.as_i64() {
-            Some(v) => Ok(Value::Integer(v)),
+            Some(v) => Ok(Value::Integer{value: v} ),
             None => match v.as_f64() {
-                Some(v) => Ok(Value::Real(v)),
+                Some(v) => Ok(Value::Float{value: v}),
                 None => Err(anyhow!(
                     "Result {result_idx} row {row_idx} cell {cell_idx} had unknown number value: {v}",
                 )),
             },
         },
-        serde_json::Value::String(v) => Ok(Value::Text(v)),
+        serde_json::Value::String(v) => Ok(Value::Text{value: v}),
         _ => Err(anyhow!(
             "Result {result_idx} row {row_idx} cell {cell_idx} had unknown type",
         )),
