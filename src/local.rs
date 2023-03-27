@@ -10,26 +10,28 @@ pub struct Client {
     inner: rusqlite::Connection,
 }
 
-impl From<Value> for RusqliteValue {
-    fn from(v: Value) -> Self {
-        match v {
+struct ValueWrapper(Value);
+
+impl From<ValueWrapper> for RusqliteValue {
+    fn from(v: ValueWrapper) -> Self {
+        match v.0 {
             Value::Null => RusqliteValue::Null,
-            Value::Integer(n) => RusqliteValue::Integer(n),
-            Value::Text(s) => RusqliteValue::Text(s),
-            Value::Real(d) => RusqliteValue::Real(d),
-            Value::Blob(b) => RusqliteValue::Blob(b),
+            Value::Integer { value: n } => RusqliteValue::Integer(n),
+            Value::Text { value: s } => RusqliteValue::Text(s),
+            Value::Float { value: d } => RusqliteValue::Real(d),
+            Value::Blob { value: b } => RusqliteValue::Blob(b),
         }
     }
 }
 
-impl From<RusqliteValue> for Value {
+impl From<RusqliteValue> for ValueWrapper {
     fn from(v: RusqliteValue) -> Self {
         match v {
-            RusqliteValue::Null => Value::Null,
-            RusqliteValue::Integer(n) => Value::Integer(n),
-            RusqliteValue::Text(s) => Value::Text(s),
-            RusqliteValue::Real(d) => Value::Real(d),
-            RusqliteValue::Blob(b) => Value::Blob(b),
+            RusqliteValue::Null => ValueWrapper(Value::Null),
+            RusqliteValue::Integer(n) => ValueWrapper(Value::Integer { value: n }),
+            RusqliteValue::Text(s) => ValueWrapper(Value::Text { value: s }),
+            RusqliteValue::Real(d) => ValueWrapper(Value::Float { value: d }),
+            RusqliteValue::Blob(b) => ValueWrapper(Value::Blob { value: b }),
         }
     }
 }
@@ -88,8 +90,12 @@ impl Client {
         for stmt in stmts {
             let stmt = stmt.into();
             let sql_string = &stmt.q;
-            let params =
-                rusqlite::params_from_iter(stmt.params.into_iter().map(RusqliteValue::from));
+            let params = rusqlite::params_from_iter(
+                stmt.params
+                    .into_iter()
+                    .map(|v| ValueWrapper(v))
+                    .map(RusqliteValue::from),
+            );
             let mut stmt = self.inner.prepare(sql_string)?;
             let columns: Vec<String> = stmt
                 .columns()
@@ -110,7 +116,10 @@ impl Client {
                     .map(|col| {
                         (
                             col.clone(),
-                            Value::from(row.get::<&str, RusqliteValue>(col.as_str()).unwrap()),
+                            ValueWrapper::from(
+                                row.get::<&str, RusqliteValue>(col.as_str()).unwrap(),
+                            )
+                            .0,
                         )
                     })
                     .collect();

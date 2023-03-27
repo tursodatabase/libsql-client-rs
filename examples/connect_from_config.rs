@@ -13,7 +13,7 @@ fn result_to_string(query_result: QueryResult) -> Result<String> {
     ret += "\n| -------------------------------------------------------- |\n";
     for row in rows {
         for column in &columns {
-            ret += &format!("| {:16} |", row.cells[column].to_string());
+            ret += &format!("| {:16} |", serde_json::json!(row.cells[column]));
         }
         ret += "\n";
     }
@@ -68,7 +68,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 async fn main() {
     let db = new_client_from_config(libsql_client::Config {
         url: url::Url::parse("http://localhost:8080").unwrap(),
-        token: None,
+        auth_token: None,
     })
     .unwrap();
     let response = bump_counter(db)
