@@ -91,8 +91,7 @@ impl Client {
     /// # use libsql_client::reqwest::Client;
     /// use url::Url;
     ///
-    /// let url  = Url::parse("https://foo:bar@localhost:8080").unwrap();
-    /// let db = Client::from_url(&url).unwrap();
+    /// let db = Client::from_url("https://foo:bar@localhost:8000").unwrap();
     /// ```
     pub fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
     where
