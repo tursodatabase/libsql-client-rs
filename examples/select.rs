@@ -74,9 +74,9 @@ async fn main() {
         Err(e) => println!("Failed to fetch from a remote database: {e}"),
     }
 
-    let mut path_buf = std::env::temp_dir();
-    path_buf.push("libsql_client_test_db.db");
-    let local_db = libsql_client::local::Client::new(path_buf.as_path()).unwrap();
+    let local_db = libsql_client::hrana::Client::new("ws://localhost:2023", "")
+        .await
+        .unwrap();
     match bump_counter(local_db).await {
         Ok(response) => println!("Local:\n{response}"),
         Err(e) => println!("Local database query failed: {e}"),
