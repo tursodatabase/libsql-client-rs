@@ -13,7 +13,7 @@ fn result_to_string(query_result: QueryResult) -> Result<String> {
     ret += "\n| -------------------------------------------------------- |\n";
     for row in rows {
         for column in &columns {
-            ret += &format!("| {:16} |", serde_json::json!(row.cells[column]));
+            ret += &format!("| {:16} |", row.cells[column]);
         }
         ret += "\n";
     }
