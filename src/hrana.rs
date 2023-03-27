@@ -62,6 +62,8 @@ impl super::DatabaseClient for Client {
                 hrana_stmt.bind(param);
             }
             let result = self.stream.execute(hrana_stmt).await?;
+            // The map representation proved to be rather inconvenient, so we should
+            // eventually switch to hrana_client_proto::StmtResult
             let rows = result
                 .rows
                 .iter()
