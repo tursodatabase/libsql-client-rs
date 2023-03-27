@@ -40,7 +40,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     let (airport, country, city, latitude, longitude) =
         *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
 
-    db.transaction([
+    db.batch([
         Statement::with_params(
             "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
             // Parameters that have a single type can be passed as a regular slice

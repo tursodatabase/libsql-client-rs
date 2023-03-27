@@ -30,12 +30,9 @@ pub trait DatabaseClient {
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>>;
 
-    /// Executes an SQL transaction.
-    /// Does not support nested transactions - do not use BEGIN or END
-    /// inside a transaction.
-    ///
-    /// # Arguments
-    /// * `stmts` - SQL statements
+    /* Legacy implementation of transaction() looked like below,
+    ** It's no longer supported, and instead it will be used for
+    ** interactive transactions, like the ones in libsql-client-ts
     async fn transaction(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
@@ -53,6 +50,7 @@ pub trait DatabaseClient {
         ret.pop();
         Ok(ret)
     }
+    */
 }
 
 /// A generic client struct, wrapping possible backends.
