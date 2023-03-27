@@ -94,7 +94,13 @@ impl Client {
     /// let url  = Url::parse("https://foo:bar@localhost:8080").unwrap();
     /// let db = Client::from_url(&url).unwrap();
     /// ```
-    pub fn from_url(url: &url::Url) -> anyhow::Result<Client> {
+    pub fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
+    where
+        <T as TryInto<url::Url>>::Error: std::fmt::Display,
+    {
+        let url = url
+            .try_into()
+            .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
         let mut params = url.query_pairs();
         // Try a token=XXX parameter first, continue if not found
         if let Some((_, token)) = params.find(|(param_key, _)| param_key == "token") {
@@ -123,7 +129,7 @@ impl Client {
         let user = match std::env::var("LIBSQL_CLIENT_USER") {
             Ok(user) => user,
             Err(_) => {
-                return Client::from_url(&url::Url::parse(&url)?);
+                return Client::from_url(url.as_str());
             }
         };
         let pass = std::env::var("LIBSQL_CLIENT_PASS").map_err(|_| {

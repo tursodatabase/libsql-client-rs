@@ -158,7 +158,7 @@ pub fn new_client() -> anyhow::Result<GenericClient> {
         },
         #[cfg(feature = "reqwest_backend")]
         "reqwest" => {
-            GenericClient::Reqwest(super::reqwest::Client::from_url(&url::Url::parse(&url)?)?)
+            GenericClient::Reqwest(super::reqwest::Client::from_url(url.as_str())?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
