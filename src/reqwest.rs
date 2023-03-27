@@ -1,3 +1,4 @@
+use super::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 
@@ -72,6 +73,11 @@ impl Client {
                 base64::engine::general_purpose::STANDARD.encode(format!("{username}:{pass}"))
             ),
         }
+    }
+
+    /// Establishes  a database client from a `Config` object
+    pub fn from_config(config: Config) -> anyhow::Result<Self> {
+        Ok(Self::new(config.url, config.auth_token.unwrap_or_default()))
     }
 
     /// Establishes a database client, given a `Url`

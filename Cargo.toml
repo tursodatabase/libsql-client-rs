@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -48,5 +48,9 @@ path = "examples/select.rs"
 [[example]]
 name = "connect_from_env"
 path = "examples/connect_from_env.rs"
+
+[[example]]
+name = "connect_from_config"
+path = "examples/connect_from_config.rs"
 
 [workspace]

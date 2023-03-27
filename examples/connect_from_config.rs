@@ -1,5 +1,7 @@
 use anyhow::Result;
-use libsql_client::{params, DatabaseClient, QueryResult, ResultSet, Statement};
+use libsql_client::{
+    new_client_from_config, params, DatabaseClient, QueryResult, ResultSet, Statement,
+};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: QueryResult) -> Result<String> {
@@ -64,21 +66,17 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
-    match libsql_client::reqwest::Client::from_env() {
-        Ok(remote_db) => {
-            match bump_counter(remote_db).await {
-                Ok(response) => println!("Remote:\n{response}"),
-                Err(e) => println!("Remote database query failed: {e}"),
-            };
-        }
-        Err(e) => println!("Failed to fetch from a remote database: {e}"),
-    }
-
-    let mut path_buf = std::env::temp_dir();
-    path_buf.push("libsql_client_test_db.db");
-    let local_db = libsql_client::local::Client::new(path_buf.as_path()).unwrap();
-    match bump_counter(local_db).await {
-        Ok(response) => println!("Local:\n{response}"),
-        Err(e) => println!("Local database query failed: {e}"),
-    };
+    let db = new_client_from_config(libsql_client::Config {
+        url: url::Url::parse("http://localhost:8080").unwrap(),
+        token: None,
+    })
+    .unwrap();
+    let response = bump_counter(db)
+        .await
+        .unwrap_or_else(|e| format!("Error: {e}"));
+    println!(
+        "Client parameters: backend={:?} url={:?}\n{response}",
+        std::env::var("LIBSQL_CLIENT_BACKEND"),
+        std::env::var("LIBSQL_CLIENT_URL")
+    );
 }

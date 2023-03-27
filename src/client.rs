@@ -30,12 +30,9 @@ pub trait DatabaseClient {
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>>;
 
-    /// Executes an SQL transaction.
-    /// Does not support nested transactions - do not use BEGIN or END
-    /// inside a transaction.
-    ///
-    /// # Arguments
-    /// * `stmts` - SQL statements
+    /* Legacy implementation of transaction() looked like below,
+    ** It's no longer supported, and instead it will be used for
+    ** interactive transactions, like the ones in libsql-client-ts
     async fn transaction(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
@@ -53,6 +50,7 @@ pub trait DatabaseClient {
         ret.pop();
         Ok(ret)
     }
+    */
 }
 
 /// A generic client struct, wrapping possible backends.
@@ -86,6 +84,34 @@ impl DatabaseClient for GenericClient {
             Self::Spin(s) => s.batch(stmts).await,
         }
     }
+}
+
+pub struct Config {
+    pub url: url::Url,
+    pub auth_token: Option<String>,
+}
+
+pub fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
+    let scheme = config.url.scheme();
+    Ok(match scheme {
+        #[cfg(feature = "local_backend")]
+        "file" => {
+            GenericClient::Local(super::local::Client::new(config.url.to_string())?)
+        },
+        #[cfg(feature = "reqwest_backend")]
+        "http" | "https" => {
+            GenericClient::Reqwest(super::reqwest::Client::from_config(config)?)
+        },
+        #[cfg(feature = "workers_backend")]
+        "workers" => {
+            GenericClient::Workers(super::workers::Client::from_config(config))
+        },
+        #[cfg(feature = "spin_backend")]
+        "spin" => {
+            GenericClient::Spin(super::spin::Client::from_config(config))
+        },
+        _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
+    })
 }
 
 /// Establishes a database client based on environment variables
