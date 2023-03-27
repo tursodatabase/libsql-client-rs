@@ -35,6 +35,9 @@ pub mod local;
 #[cfg(feature = "spin_backend")]
 pub mod spin;
 
+#[cfg(feature = "hrana_backend")]
+pub mod hrana;
+
 /// Metadata of a database request
 #[derive(Clone, Debug, Default)]
 pub struct Meta {

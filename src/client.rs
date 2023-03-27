@@ -61,6 +61,8 @@ pub enum GenericClient {
     Local(super::local::Client),
     #[cfg(feature = "reqwest_backend")]
     Reqwest(super::reqwest::Client),
+    #[cfg(feature = "hrana_backend")]
+    Hrana(super::hrana::Client),
     #[cfg(feature = "workers_backend")]
     Workers(super::workers::Client),
     #[cfg(feature = "spin_backend")]
@@ -78,6 +80,8 @@ impl DatabaseClient for GenericClient {
             Self::Local(l) => l.batch(stmts).await,
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(r) => r.batch(stmts).await,
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.batch(stmts).await,
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.batch(stmts).await,
             #[cfg(feature = "spin_backend")]
@@ -91,7 +95,7 @@ pub struct Config {
     pub auth_token: Option<String>,
 }
 
-pub fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
+pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
@@ -101,6 +105,10 @@ pub fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
         #[cfg(feature = "reqwest_backend")]
         "http" | "https" => {
             GenericClient::Reqwest(super::reqwest::Client::from_config(config)?)
+        },
+        #[cfg(feature = "hrana_backend")]
+        "ws" | "wss" => {
+            GenericClient::Hrana(super::hrana::Client::from_config(config).await?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
@@ -130,7 +138,7 @@ pub fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
 /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
 /// let db = libsql_client::new_client().unwrap();
 /// ```
-pub fn new_client() -> anyhow::Result<GenericClient> {
+pub async fn new_client() -> anyhow::Result<GenericClient> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
         anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
     })?;
@@ -146,6 +154,8 @@ pub fn new_client() -> anyhow::Result<GenericClient> {
                 "local"
             }
             .to_string();
+        } else if url.starts_with("ws") && cfg!(feature = "hrana_backend") {
+            "hrana"
         } else {
             "local"
         }
@@ -159,6 +169,10 @@ pub fn new_client() -> anyhow::Result<GenericClient> {
         #[cfg(feature = "reqwest_backend")]
         "reqwest" => {
             GenericClient::Reqwest(super::reqwest::Client::from_url(url.as_str())?)
+        },
+        #[cfg(feature = "hrana_backend")]
+        "hrana" => {
+            GenericClient::Hrana(super::hrana::Client::new(url.as_str(), "").await?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {

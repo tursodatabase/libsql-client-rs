@@ -93,7 +93,7 @@ impl Client {
             let params = rusqlite::params_from_iter(
                 stmt.params
                     .into_iter()
-                    .map(|v| ValueWrapper(v))
+                    .map(ValueWrapper)
                     .map(RusqliteValue::from),
             );
             let mut stmt = self.inner.prepare(sql_string)?;
