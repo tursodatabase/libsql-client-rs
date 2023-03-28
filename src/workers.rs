@@ -165,7 +165,7 @@ impl Client {
     ///     .await;
     /// # }
     /// ```
-    async fn batch(
+    async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>> {
@@ -206,10 +206,12 @@ impl Client {
 
 #[async_trait(?Send)]
 impl super::DatabaseClient for Client {
-    async fn batch(
+    async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<Vec<QueryResult>> {
-        self.batch(stmts).await.map_err(|e| anyhow::anyhow!("{e}"))
+        self.raw_batch(stmts)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 }

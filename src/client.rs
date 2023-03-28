@@ -25,20 +25,23 @@ pub trait DatabaseClient {
     ///
     /// # Arguments
     /// * `stmts` - SQL statements
-    async fn batch(
+    async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>>;
 
-    /* Legacy implementation of transaction() looked like below,
-    ** It's no longer supported, and instead it will be used for
-    ** interactive transactions, like the ones in libsql-client-ts
-    async fn transaction(
+    /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
+    /// Each statement is going to run in its own transaction,
+    /// unless they're wrapped in BEGIN and END
+    ///
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>> {
         let mut ret: Vec<QueryResult> = self
-            .batch(
+            .raw_batch(
                 std::iter::once(Statement::new("BEGIN"))
                     .chain(stmts.into_iter().map(|s| s.into()))
                     .chain(std::iter::once(Statement::new("END"))),
@@ -50,7 +53,6 @@ pub trait DatabaseClient {
         ret.pop();
         Ok(ret)
     }
-    */
 }
 
 /// A generic client struct, wrapping possible backends.
@@ -71,21 +73,21 @@ pub enum GenericClient {
 
 #[async_trait(?Send)]
 impl DatabaseClient for GenericClient {
-    async fn batch(
+    async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<Vec<QueryResult>> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.batch(stmts).await,
+            Self::Local(l) => l.raw_batch(stmts).await,
             #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.batch(stmts).await,
+            Self::Reqwest(r) => r.raw_batch(stmts).await,
             #[cfg(feature = "hrana_backend")]
-            Self::Hrana(h) => h.batch(stmts).await,
+            Self::Hrana(h) => h.raw_batch(stmts).await,
             #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.batch(stmts).await,
+            Self::Workers(w) => w.raw_batch(stmts).await,
             #[cfg(feature = "spin_backend")]
-            Self::Spin(s) => s.batch(stmts).await,
+            Self::Spin(s) => s.raw_batch(stmts).await,
         }
     }
 }
