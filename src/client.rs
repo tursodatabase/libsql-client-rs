@@ -95,20 +95,38 @@ pub struct Config {
     pub auth_token: Option<String>,
 }
 
-pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
+// NOTICE: safe for unwrapping, because we're only replacing the scheme
+fn maybe_translate_url(url: url::Url) -> url::Url {
+    if cfg!(feature = "hrana_backend") {
+        match url.scheme() {
+            "libsql" => url::Url::parse(&url.as_str().replace("libsql://", "ws://")).unwrap(),
+            "libsqls" => url::Url::parse(&url.as_str().replace("libsqls://", "wss://")).unwrap(),
+            _ => url,
+        }
+    } else {
+        match url.scheme() {
+            "libsql" => url::Url::parse(&url.as_str().replace("libsql://", "http://")).unwrap(),
+            "libsqls" => url::Url::parse(&url.as_str().replace("libsql://", "https://")).unwrap(),
+            _ => url,
+        }
+    }
+}
+
+pub async fn new_client_from_config(mut config: Config) -> anyhow::Result<GenericClient> {
+    config.url = maybe_translate_url(config.url);
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
         "file" => {
             GenericClient::Local(super::local::Client::new(config.url.to_string())?)
         },
-        #[cfg(feature = "reqwest_backend")]
-        "http" | "https" => {
-            GenericClient::Reqwest(super::reqwest::Client::from_config(config)?)
-        },
         #[cfg(feature = "hrana_backend")]
         "ws" | "wss" => {
             GenericClient::Hrana(super::hrana::Client::from_config(config).await?)
+        },
+        #[cfg(feature = "reqwest_backend")]
+        "http" | "https" => {
+            GenericClient::Reqwest(super::reqwest::Client::from_config(config)?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
@@ -142,29 +160,37 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
         anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
     })?;
+    let url = match url::Url::parse(&url) {
+        Ok(url) => url,
+        Err(_) if cfg!(feature = "local") => {
+            return Ok(GenericClient::Local(super::local::Client::new(url)?))
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let url = maybe_translate_url(url);
+    let scheme = url.scheme();
     let backend = std::env::var("LIBSQL_CLIENT_BACKEND").unwrap_or_else(|_| {
-        if url.starts_with("http") {
-            return if cfg!(feature = "reqwest_backend") {
-                "reqwest"
-            } else if cfg!(feature = "workers_backend") {
-                "workers"
-            } else if cfg!(feature = "spin_backend") {
-                "spin"
-            } else {
-                "local"
+        match scheme {
+            "ws" | "wss" if cfg!(feature = "hrana_backend") => "hrana",
+            "http" | "https" => {
+                if cfg!(feature = "reqwest_backend") {
+                    "reqwest"
+                } else if cfg!(feature = "workers_backend") {
+                    "workers"
+                } else if cfg!(feature = "spin_backend") {
+                    "spin"
+                } else {
+                    "local"
+                }
             }
-            .to_string();
-        } else if url.starts_with("ws") && cfg!(feature = "hrana_backend") {
-            "hrana"
-        } else {
-            "local"
+            _ => "local",
         }
         .to_string()
     });
     Ok(match backend.as_str() {
         #[cfg(feature = "local_backend")]
         "local" => {
-            GenericClient::Local(super::local::Client::new(url)?)
+            GenericClient::Local(super::local::Client::new(url.as_str())?)
         },
         #[cfg(feature = "reqwest_backend")]
         "reqwest" => {

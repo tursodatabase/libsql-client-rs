@@ -67,7 +67,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 #[tokio::main]
 async fn main() {
     let db = new_client_from_config(libsql_client::Config {
-        url: url::Url::parse("http://localhost:8080").unwrap(),
+        url: url::Url::parse("libsql://localhost:8080").unwrap(),
         auth_token: None,
     })
     .await

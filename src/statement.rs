@@ -65,7 +65,7 @@ impl std::fmt::Display for Statement {
             let params: Vec<String> = self
                 .params
                 .iter()
-                .map(|p| serde_json::json!(p).to_string())
+                .map(|p| serde_json::json!(p)["value"].to_string())
                 .collect();
             write!(
                 f,
