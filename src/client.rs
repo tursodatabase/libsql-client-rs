@@ -95,25 +95,7 @@ pub struct Config {
     pub auth_token: Option<String>,
 }
 
-// NOTICE: safe for unwrapping, because we're only replacing the scheme
-fn maybe_translate_url(url: url::Url) -> url::Url {
-    if cfg!(feature = "hrana_backend") {
-        match url.scheme() {
-            "libsql" => url::Url::parse(&url.as_str().replace("libsql://", "ws://")).unwrap(),
-            "libsqls" => url::Url::parse(&url.as_str().replace("libsqls://", "wss://")).unwrap(),
-            _ => url,
-        }
-    } else {
-        match url.scheme() {
-            "libsql" => url::Url::parse(&url.as_str().replace("libsql://", "http://")).unwrap(),
-            "libsqls" => url::Url::parse(&url.as_str().replace("libsql://", "https://")).unwrap(),
-            _ => url,
-        }
-    }
-}
-
-pub async fn new_client_from_config(mut config: Config) -> anyhow::Result<GenericClient> {
-    config.url = maybe_translate_url(config.url);
+pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
@@ -167,11 +149,10 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
         }
         Err(e) => return Err(e.into()),
     };
-    let url = maybe_translate_url(url);
     let scheme = url.scheme();
     let backend = std::env::var("LIBSQL_CLIENT_BACKEND").unwrap_or_else(|_| {
         match scheme {
-            "ws" | "wss" if cfg!(feature = "hrana_backend") => "hrana",
+            "ws" | "wss" | "libsql" if cfg!(feature = "hrana_backend") => "hrana",
             "http" | "https" => {
                 if cfg!(feature = "reqwest_backend") {
                     "reqwest"
@@ -198,6 +179,13 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
         },
         #[cfg(feature = "hrana_backend")]
         "hrana" => {
+            let url = if url.scheme() == "libsql" {
+                // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
+                // Safe to unwrap, because we know that the scheme is libsql
+                url::Url::parse(&url.as_str().replace("libsql://", "wss://")).unwrap()
+            } else {
+                url
+            };
             GenericClient::Hrana(super::hrana::Client::new(url.as_str(), "").await?)
         },
         #[cfg(feature = "workers_backend")]
