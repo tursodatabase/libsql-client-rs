@@ -51,42 +51,49 @@ impl super::DatabaseClient for Client {
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<Vec<QueryResult>> {
         use std::collections::HashMap;
-        // FIXME: batches do not work yet: https://github.com/libsql/sqld/pull/307
-        // let mut batch = hrana_client::proto::Batch::new();
 
-        let mut query_result: Vec<QueryResult> = Vec::new();
+        let mut batch = hrana_client::proto::Batch::new();
+
         for stmt in stmts.into_iter() {
             let stmt: Statement = stmt.into();
             let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.q, true);
             for param in stmt.params {
                 hrana_stmt.bind(param);
             }
-            let result = self.stream.execute(hrana_stmt).await?;
-            // The map representation proved to be rather inconvenient, so we should
-            // eventually switch to hrana_client_proto::StmtResult
-            let rows = result
-                .rows
-                .iter()
-                .map(|vec_of_values| {
-                    let mut cells: HashMap<String, crate::Value> = HashMap::new();
-                    for (i, value) in vec_of_values.iter().enumerate() {
-                        cells.insert(result.cols[i].name.clone().unwrap(), value.clone());
-                    }
-                    crate::Row { cells }
-                })
-                .collect();
-            query_result.push(QueryResult::Success((
-                crate::ResultSet {
-                    columns: result
-                        .cols
-                        .iter()
-                        .map(|c| c.name.clone().unwrap())
-                        .collect(),
-                    rows,
-                },
-                crate::Meta::default(),
-            )));
+            batch.step(None, hrana_stmt);
         }
-        Ok(query_result)
+        let results = self.stream.execute_batch(batch).await?;
+
+        Ok(results
+            .step_results
+            .iter()
+            .map(|result| match result {
+                Some(result) => {
+                    let rows = result
+                        .rows
+                        .iter()
+                        .map(|vec_of_values| {
+                            let mut cells: HashMap<String, crate::Value> = HashMap::new();
+                            for (i, value) in vec_of_values.iter().enumerate() {
+                                cells.insert(result.cols[i].name.clone().unwrap(), value.clone());
+                            }
+                            crate::Row { cells }
+                        })
+                        .collect();
+                    QueryResult::Success((
+                        crate::ResultSet {
+                            columns: result
+                                .cols
+                                .iter()
+                                .map(|c| c.name.clone().unwrap())
+                                .collect(),
+                            rows,
+                        },
+                        crate::Meta::default(),
+                    ))
+                }
+                None => QueryResult::Error(("No result".to_string(), crate::Meta::default())),
+            })
+            .collect())
     }
 }
