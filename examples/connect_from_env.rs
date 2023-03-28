@@ -64,7 +64,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
-    let db = new_client().unwrap();
+    let db = new_client().await.unwrap();
     let response = bump_counter(db)
         .await
         .unwrap_or_else(|e| format!("Error: {e}"));

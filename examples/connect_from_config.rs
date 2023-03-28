@@ -70,6 +70,7 @@ async fn main() {
         url: url::Url::parse("http://localhost:8080").unwrap(),
         auth_token: None,
     })
+    .await
     .unwrap();
     let response = bump_counter(db)
         .await
