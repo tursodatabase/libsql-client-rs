@@ -15,7 +15,7 @@ pub trait DatabaseClient {
     /// # Arguments
     /// * `stmt` - the SQL statement
     async fn execute(&self, stmt: impl Into<Statement>) -> Result<QueryResult> {
-        let mut results = self.batch(std::iter::once(stmt)).await?;
+        let mut results = self.raw_batch(std::iter::once(stmt)).await?;
         Ok(results.remove(0))
     }
 
