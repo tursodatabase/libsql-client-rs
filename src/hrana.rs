@@ -64,36 +64,41 @@ impl crate::DatabaseClient for Client {
         }
         let results = self.stream.execute_batch(batch).await?;
 
-        Ok(results
-            .step_results
-            .iter()
-            .map(|result| match result {
-                Some(result) => {
-                    let rows = result
-                        .rows
-                        .iter()
-                        .map(|vec_of_values| {
-                            let mut cells: HashMap<String, crate::Value> = HashMap::new();
-                            for (i, value) in vec_of_values.iter().enumerate() {
-                                cells.insert(result.cols[i].name.clone().unwrap(), value.clone());
-                            }
-                            crate::Row { cells }
-                        })
-                        .collect();
-                    QueryResult::Success((
-                        crate::ResultSet {
-                            columns: result
-                                .cols
-                                .iter()
-                                .map(|c| c.name.clone().unwrap())
-                                .collect(),
-                            rows,
-                        },
-                        crate::Meta::default(),
-                    ))
-                }
-                None => QueryResult::Error(("No result".to_string(), crate::Meta::default())),
-            })
-            .collect())
+        Ok(std::iter::zip(
+            results.step_results.into_iter(),
+            results.step_errors.into_iter(),
+        )
+        .map(|result| match result {
+            (Some(result), None) => {
+                let rows = result
+                    .rows
+                    .iter()
+                    .map(|vec_of_values| {
+                        let mut cells: HashMap<String, crate::Value> = HashMap::new();
+                        for (i, value) in vec_of_values.iter().enumerate() {
+                            cells.insert(result.cols[i].name.clone().unwrap(), value.clone());
+                        }
+                        crate::Row { cells }
+                    })
+                    .collect();
+                QueryResult::Success((
+                    crate::ResultSet {
+                        columns: result
+                            .cols
+                            .iter()
+                            .map(|c| c.name.clone().unwrap())
+                            .collect(),
+                        rows,
+                    },
+                    crate::Meta::default(),
+                ))
+            }
+            (None, Some(err)) => QueryResult::Error((err.message, crate::Meta::default())),
+            _ => QueryResult::Error((
+                "Unexpected combination of result and error".to_string(),
+                crate::Meta::default(),
+            )),
+        })
+        .collect())
     }
 }
