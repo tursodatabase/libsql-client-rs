@@ -1,19 +1,17 @@
 use anyhow::Result;
-use libsql_client::{
-    new_client_from_config, params, DatabaseClient, QueryResult, ResultSet, Statement,
-};
+use libsql_client::{new_client_from_config, params, DatabaseClient, Statement, StmtResult};
 use rand::prelude::SliceRandom;
 
-fn result_to_string(query_result: QueryResult) -> Result<String> {
+fn result_to_string(query_result: StmtResult) -> Result<String> {
     let mut ret = String::new();
-    let ResultSet { columns, rows } = query_result.into_result_set()?;
-    for column in &columns {
-        ret += &format!("| {column:16} |");
+    let StmtResult { cols, rows, .. } = query_result;
+    for column in &cols {
+        ret += &format!("| {:16} |", column.name.as_deref().unwrap_or_default());
     }
     ret += "\n| -------------------------------------------------------- |\n";
     for row in rows {
-        for column in &columns {
-            ret += &format!("| {:16} |", row.cells[column]);
+        for cell in row {
+            ret += &format!("| {:16} |", cell);
         }
         ret += "\n";
     }

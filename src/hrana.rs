@@ -2,7 +2,7 @@ use crate::client::Config;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{QueryResult, Statement};
+use crate::{BatchResult, Statement, StmtResult};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -44,39 +44,12 @@ impl Client {
     }
 }
 
-fn parse_query_result(result: hrana_client::proto::StmtResult) -> anyhow::Result<QueryResult> {
-    use std::collections::HashMap;
-
-    let rows = result
-        .rows
-        .iter()
-        .map(|vec_of_values| {
-            let mut cells: HashMap<String, crate::Value> = HashMap::new();
-            for (i, value) in vec_of_values.iter().enumerate() {
-                cells.insert(result.cols[i].name.clone().unwrap(), value.clone());
-            }
-            crate::Row { cells }
-        })
-        .collect();
-    Ok(QueryResult::Success((
-        crate::ResultSet {
-            columns: result
-                .cols
-                .iter()
-                .map(|c| c.name.clone().unwrap())
-                .collect(),
-            rows,
-        },
-        crate::Meta::default(),
-    )))
-}
-
 #[async_trait(?Send)]
 impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         let mut batch = hrana_client::proto::Batch::new();
 
         for stmt in stmts.into_iter() {
@@ -87,30 +60,22 @@ impl crate::DatabaseClient for Client {
             }
             batch.step(None, hrana_stmt);
         }
-        let results = self.stream.execute_batch(batch).await?;
-
-        std::iter::zip(
-            results.step_results.into_iter(),
-            results.step_errors.into_iter(),
-        )
-        .map(|result| match result {
-            (Some(result), None) => parse_query_result(result),
-            (None, Some(err)) => Ok(QueryResult::Error((err.message, crate::Meta::default()))),
-            _ => Ok(QueryResult::Error((
-                "Unexpected combination of result and error".to_string(),
-                crate::Meta::default(),
-            ))),
-        })
-        .collect()
+        self.stream
+            .execute_batch(batch)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<QueryResult> {
+    async fn execute(&self, stmt: impl Into<Statement>) -> Result<StmtResult> {
         let stmt: Statement = stmt.into();
         let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.q, true);
         for param in stmt.params {
             hrana_stmt.bind(param);
         }
 
-        parse_query_result(self.stream.execute(hrana_stmt).await?)
+        self.stream
+            .execute(hrana_stmt)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 }

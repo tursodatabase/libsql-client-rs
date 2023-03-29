@@ -2,7 +2,7 @@ use crate::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 
-use crate::{QueryResult, Statement, Transaction};
+use crate::{BatchResult, Statement, Transaction};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -143,7 +143,7 @@ impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         let (body, stmts_count) = crate::client::statements_to_string(stmts);
         let client = reqwest::Client::new();
         let response = match client
@@ -173,7 +173,7 @@ impl crate::DatabaseClient for Client {
         }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        crate::client::json_to_query_result(response_json, stmts_count)
+        crate::client::http_json_to_batch_result(response_json, stmts_count)
     }
 
     async fn transaction<'a>(&'a mut self) -> anyhow::Result<Transaction<'a, Self>> {

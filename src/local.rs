@@ -1,4 +1,4 @@
-use crate::{Meta, QueryResult, ResultSet, Row, Statement, Value};
+use crate::{proto, BatchResult, Col, Statement, StmtResult, Value};
 use async_trait::async_trait;
 
 use rusqlite::types::Value as RusqliteValue;
@@ -85,8 +85,9 @@ impl Client {
     pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
-        let mut result = vec![];
+    ) -> anyhow::Result<BatchResult> {
+        let mut step_results = vec![];
+        let mut step_errors = vec![];
         for stmt in stmts {
             let stmt = stmt.into();
             let sql_string = &stmt.q;
@@ -97,39 +98,44 @@ impl Client {
                     .map(RusqliteValue::from),
             );
             let mut stmt = self.inner.prepare(sql_string)?;
-            let columns: Vec<String> = stmt
+            let cols: Vec<Col> = stmt
                 .columns()
                 .into_iter()
-                .map(|c| c.name().to_string())
+                .map(|c| Col {
+                    name: Some(c.name().to_string()),
+                })
                 .collect();
             let mut rows = Vec::new();
             let mut input_rows = match stmt.query(params) {
                 Ok(rows) => rows,
                 Err(e) => {
-                    result.push(QueryResult::Error((format!("{e}"), Meta { duration: 0 })));
+                    step_results.push(None);
+                    step_errors.push(Some(proto::Error {
+                        message: e.to_string(),
+                    }));
                     break;
                 }
             };
             while let Some(row) = input_rows.next()? {
-                let cells = columns
-                    .iter()
-                    .map(|col| {
-                        (
-                            col.clone(),
-                            ValueWrapper::from(
-                                row.get::<&str, RusqliteValue>(col.as_str()).unwrap(),
-                            )
-                            .0,
-                        )
-                    })
+                let cells = (0..cols.len())
+                    .map(|i| ValueWrapper::from(row.get::<usize, RusqliteValue>(i).unwrap()).0)
                     .collect();
-                rows.push(Row { cells })
+                rows.push(cells)
             }
-            let meta = Meta { duration: 0 };
-            let result_set = ResultSet { columns, rows };
-            result.push(QueryResult::Success((result_set, meta)))
+            // FIXME: affected_row_count and last_insert_rowid are not implemented yet
+            let stmt_result = StmtResult {
+                cols,
+                rows,
+                affected_row_count: 0,
+                last_insert_rowid: None,
+            };
+            step_results.push(Some(stmt_result));
+            step_errors.push(None);
         }
-        Ok(result)
+        Ok(BatchResult {
+            step_results,
+            step_errors,
+        })
     }
 }
 
@@ -138,7 +144,7 @@ impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         self.raw_batch(stmts).await
     }
 }

@@ -2,7 +2,7 @@ use crate::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 
-use crate::{parse_query_result, QueryResult, Statement, Transaction};
+use crate::{BatchResult, Statement, Transaction};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -120,7 +120,7 @@ impl Client {
     fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         // FIXME: serialize and deserialize with existing routines from sqld
         let mut body = "{\"statements\": [".to_string();
         let mut stmts_count = 0;
@@ -146,23 +146,7 @@ impl Client {
         let resp: String =
             std::str::from_utf8(&response?.into_body().unwrap_or_default())?.to_string();
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        match response_json {
-            serde_json::Value::Array(results) => {
-                if results.len() != stmts_count {
-                    Err(anyhow::anyhow!(
-                        "Response array did not contain expected {stmts_count} results"
-                    ))
-                } else {
-                    let mut query_results: Vec<QueryResult> = Vec::with_capacity(stmts_count);
-                    for (idx, result) in results.into_iter().enumerate() {
-                        query_results.push(parse_query_result(result, idx)?);
-                    }
-
-                    Ok(query_results)
-                }
-            }
-            e => Err(anyhow::anyhow!("Error: {} ({:?})", e, body)),
-        }
+        crate::client::http_json_to_batch_result(response_json, stmts_count)
     }
 }
 
@@ -171,7 +155,7 @@ impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         self.raw_batch(stmts).map_err(|e| anyhow::anyhow!("{e}"))
     }
 

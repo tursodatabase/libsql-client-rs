@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
-use crate::{parse_query_result, QueryResult, Statement, Transaction};
+use crate::{proto, BatchResult, Col, Statement, StmtResult, Transaction, Value};
 
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
@@ -14,9 +14,13 @@ pub trait DatabaseClient {
     ///
     /// # Arguments
     /// * `stmt` - the SQL statement
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<QueryResult> {
-        let mut results = self.raw_batch(std::iter::once(stmt)).await?;
-        Ok(results.remove(0))
+    async fn execute(&self, stmt: impl Into<Statement>) -> Result<StmtResult> {
+        let results = self.raw_batch(std::iter::once(stmt)).await?;
+        match (results.step_results.first(), results.step_errors.first()) {
+            (Some(Some(result)), Some(None)) => Ok(result.clone()),
+            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
+            _ => unreachable!(),
+        }
     }
 
     /// Executes a batch of SQL statements.
@@ -28,7 +32,7 @@ pub trait DatabaseClient {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<Vec<QueryResult>>;
+    ) -> Result<BatchResult>;
 
     /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
     /// Each statement is going to run in its own transaction,
@@ -39,19 +43,24 @@ pub trait DatabaseClient {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<Vec<QueryResult>> {
-        let mut ret: Vec<QueryResult> = self
+    ) -> Result<BatchResult> {
+        let batch_results = self
             .raw_batch(
                 std::iter::once(Statement::new("BEGIN"))
                     .chain(stmts.into_iter().map(|s| s.into()))
                     .chain(std::iter::once(Statement::new("END"))),
             )
-            .await?
-            .into_iter()
-            .skip(1)
-            .collect();
-        ret.pop();
-        Ok(ret)
+            .await?;
+        let mut step_results: Vec<Option<StmtResult>> =
+            batch_results.step_results.into_iter().skip(1).collect();
+        step_results.pop();
+        let mut step_errors: Vec<Option<proto::Error>> =
+            batch_results.step_errors.into_iter().skip(1).collect();
+        step_errors.pop();
+        Ok(BatchResult {
+            step_results,
+            step_errors,
+        })
     }
 
     /// Starts an interactive transaction and returns a `Transaction` object.
@@ -83,7 +92,7 @@ impl DatabaseClient for GenericClient {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<Vec<QueryResult>> {
+    ) -> Result<BatchResult> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.raw_batch(stmts).await,
@@ -115,7 +124,7 @@ impl DatabaseClient for GenericClient {
             #[cfg(feature = "spin_backend")]
             Self::Spin(_) => {
                 anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
-            },
+            }
         }
     }
 }
@@ -274,25 +283,155 @@ pub(crate) fn statements_to_string(
     (body, stmts_count)
 }
 
-pub(crate) fn json_to_query_result(
+pub(crate) fn parse_columns(
+    columns: Vec<serde_json::Value>,
+    result_idx: usize,
+) -> Result<Vec<Col>> {
+    let mut result = Vec::with_capacity(columns.len());
+    for (idx, column) in columns.into_iter().enumerate() {
+        match column {
+            serde_json::Value::String(column) => result.push(Col { name: Some(column) }),
+            _ => {
+                return Err(anyhow!(format!(
+                    "Result {result_idx} column name {idx} not a string",
+                )))
+            }
+        }
+    }
+    Ok(result)
+}
+
+pub(crate) fn parse_value(
+    cell: serde_json::Value,
+    result_idx: usize,
+    row_idx: usize,
+    cell_idx: usize,
+) -> Result<Value> {
+    match cell {
+        serde_json::Value::Null => Ok(Value::Null),
+        serde_json::Value::Number(v) => match v.as_i64() {
+            Some(v) => Ok(Value::Integer{value: v} ),
+            None => match v.as_f64() {
+                Some(v) => Ok(Value::Float{value: v}),
+                None => Err(anyhow!(
+                    "Result {result_idx} row {row_idx} cell {cell_idx} had unknown number value: {v}",
+                )),
+            },
+        },
+        serde_json::Value::String(v) => Ok(Value::Text{value: v}),
+        _ => Err(anyhow!(
+            "Result {result_idx} row {row_idx} cell {cell_idx} had unknown type",
+        )),
+    }
+}
+
+pub(crate) fn parse_rows(
+    rows: Vec<serde_json::Value>,
+    cols_len: usize,
+    result_idx: usize,
+) -> Result<Vec<Vec<Value>>> {
+    let mut result = Vec::with_capacity(rows.len());
+    for (idx, row) in rows.into_iter().enumerate() {
+        match row {
+            serde_json::Value::Array(row) => {
+                if row.len() != cols_len {
+                    return Err(anyhow!(
+                        "Result {result_idx} row {idx} had wrong number of cells",
+                    ));
+                }
+                let mut cells: Vec<Value> = Vec::with_capacity(cols_len);
+                for (cell_idx, value) in row.into_iter().enumerate() {
+                    cells.push(parse_value(value, result_idx, idx, cell_idx)?);
+                }
+                result.push(cells)
+            }
+            _ => return Err(anyhow!("Result {result_idx} row {idx} was not an array",)),
+        }
+    }
+    Ok(result)
+}
+
+pub(crate) fn parse_query_result(
+    result: serde_json::Value,
+    idx: usize,
+) -> Result<(Option<StmtResult>, Option<proto::Error>)> {
+    match result {
+        serde_json::Value::Object(obj) => {
+            if let Some(err) = obj.get("error") {
+                return match err {
+                    serde_json::Value::Object(obj) => match obj.get("message") {
+                        Some(serde_json::Value::String(msg)) => Ok((
+                            None,
+                            Some(proto::Error {
+                                message: msg.clone(),
+                            }),
+                        )),
+                        _ => Err(anyhow!("Result {idx} error message was not a string",)),
+                    },
+                    _ => Err(anyhow!("Result {idx} results was not an object",)),
+                };
+            }
+
+            let results = obj.get("results");
+            match results {
+                Some(serde_json::Value::Object(obj)) => {
+                    let columns = obj
+                        .get("columns")
+                        .ok_or_else(|| anyhow!(format!("Result {idx} had no columns")))?;
+                    let rows = obj
+                        .get("rows")
+                        .ok_or_else(|| anyhow!(format!("Result {idx} had no rows")))?;
+                    match (rows, columns) {
+                        (serde_json::Value::Array(rows), serde_json::Value::Array(columns)) => {
+                            let cols = parse_columns(columns.to_vec(), idx)?;
+                            let rows = parse_rows(rows.to_vec(), columns.len(), idx)?;
+                            // FIXME: affected_row_count and last_insert_rowid are not implemented yet
+                            let stmt_result = StmtResult {
+                                cols,
+                                rows,
+                                affected_row_count: 0,
+                                last_insert_rowid: None,
+                            };
+                            Ok((Some(stmt_result), None))
+                        }
+                        _ => Err(anyhow!(
+                            "Result {idx} had rows or columns that were not an array",
+                        )),
+                    }
+                }
+                Some(_) => Err(anyhow!("Result {idx} was not an object",)),
+                None => Err(anyhow!("Result {idx} did not contain results or error",)),
+            }
+        }
+        _ => Err(anyhow!("Result {idx} was not an object",)),
+    }
+}
+
+pub(crate) fn http_json_to_batch_result(
     response_json: serde_json::Value,
     stmts_count: usize,
-) -> anyhow::Result<Vec<QueryResult>> {
+) -> anyhow::Result<BatchResult> {
     match response_json {
         serde_json::Value::Array(results) => {
             if results.len() != stmts_count {
-                Err(anyhow::anyhow!(
+                return Err(anyhow::anyhow!(
                     "Response array did not contain expected {stmts_count} results"
-                ))
-            } else {
-                let mut query_results: Vec<QueryResult> = Vec::with_capacity(stmts_count);
-                for (idx, result) in results.into_iter().enumerate() {
-                    query_results
-                        .push(parse_query_result(result, idx).map_err(|e| anyhow::anyhow!("{e}"))?);
-                }
-
-                Ok(query_results)
+                ));
             }
+
+            let mut step_results: Vec<Option<StmtResult>> = Vec::with_capacity(stmts_count);
+            let mut step_errors: Vec<Option<proto::Error>> = Vec::with_capacity(stmts_count);
+            for (idx, result) in results.into_iter().enumerate() {
+                let (step_result, step_error) =
+                    parse_query_result(result, idx).map_err(|e| anyhow::anyhow!("{e}"))?;
+                step_results.push(step_result);
+                step_errors.push(step_error);
+            }
+
+            Ok(BatchResult {
+                step_results,
+                step_errors,
+            })
         }
         e => Err(anyhow::anyhow!("Error: {}", e)),
     }

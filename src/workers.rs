@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use worker::*;
 
-use crate::{QueryResult, Statement, Transaction};
+use crate::{BatchResult, Statement, Transaction};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -168,7 +168,7 @@ impl Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<Vec<QueryResult>> {
+    ) -> Result<BatchResult> {
         let mut headers = Headers::new();
         headers.append("Authorization", &self.auth).ok();
         let (body, stmts_count) = crate::client::statements_to_string(stmts);
@@ -199,7 +199,7 @@ impl Client {
         }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        crate::client::json_to_query_result(response_json, stmts_count)
+        crate::client::http_json_to_batch_result(response_json, stmts_count)
             .map_err(|e| worker::Error::from(format!("Error: {} ({:?})", e, request_init.body)))
     }
 }
@@ -209,7 +209,7 @@ impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<Vec<QueryResult>> {
+    ) -> anyhow::Result<BatchResult> {
         self.raw_batch(stmts)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
