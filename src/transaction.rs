@@ -15,6 +15,23 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     }
 
     /// Executes a statement within the current transaction.
+    /// # Example
+    ///
+    /// ```rust,no_run
+    ///   # async fn f() -> anyhow::Result<()> {
+    ///   # use crate::libsql_client::{DatabaseClient, Statement, params};
+    ///   let mut db = libsql_client::new_client().await?;
+    ///   let mut tx = db.transaction().await?;
+    ///   tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", params!["John"])).await?;
+    ///   let res = tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", params!["Jane"])).await;
+    ///   if res.is_err() {
+    ///     tx.rollback().await?;
+    ///   } else {
+    ///     tx.commit().await?;
+    ///   }
+    ///   # Ok(())
+    ///   # }
+    /// ```
     pub async fn execute(&mut self, stmt: Statement) -> Result<QueryResult> {
         self.client
             .raw_batch(vec![stmt])
