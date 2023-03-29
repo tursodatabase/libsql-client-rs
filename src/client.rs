@@ -115,7 +115,7 @@ impl DatabaseClient for GenericClient {
             #[cfg(feature = "spin_backend")]
             Self::Spin(_) => {
                 anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
-            }
+            },
         }
     }
 }
@@ -200,6 +200,7 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     })?;
     let url = match url::Url::parse(&url) {
         Ok(url) => url,
+        #[cfg(feature = "local_backend")]
         Err(_) if cfg!(feature = "local") => {
             return Ok(GenericClient::Local(crate::local::Client::new(url)?))
         }
