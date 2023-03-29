@@ -1,8 +1,8 @@
-use super::client::Config;
+use crate::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 
-use super::{parse_query_result, QueryResult, Statement};
+use crate::{parse_query_result, QueryResult, Statement, Transaction};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -167,11 +167,15 @@ impl Client {
 }
 
 #[async_trait(?Send)]
-impl super::DatabaseClient for Client {
+impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<Vec<QueryResult>> {
         self.raw_batch(stmts).map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    async fn transaction<'a>(&'a mut self) -> anyhow::Result<Transaction<'a, Self>> {
+        anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
     }
 }

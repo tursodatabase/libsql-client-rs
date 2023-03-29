@@ -1,4 +1,4 @@
-use super::{Meta, QueryResult, ResultSet, Row, Statement, Value};
+use crate::{Meta, QueryResult, ResultSet, Row, Statement, Value};
 use async_trait::async_trait;
 
 use rusqlite::types::Value as RusqliteValue;
@@ -78,7 +78,7 @@ impl Client {
     /// # async fn f() {
     /// let db = libsql_client::local::Client::new("/tmp/example321.db").unwrap();
     /// let result = db
-    ///     .batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"])
+    ///     .raw_batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"])
     ///     .await;
     /// # }
     /// ```
@@ -134,7 +134,7 @@ impl Client {
 }
 
 #[async_trait(?Send)]
-impl super::DatabaseClient for Client {
+impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,

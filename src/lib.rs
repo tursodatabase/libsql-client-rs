@@ -23,6 +23,9 @@ pub use value::Value;
 pub mod client;
 pub use client::{new_client, new_client_from_config, Config, DatabaseClient};
 
+pub mod transaction;
+pub use transaction::Transaction;
+
 #[cfg(feature = "workers_backend")]
 pub mod workers;
 
@@ -201,7 +204,7 @@ pub(crate) fn parse_query_result(result: serde_json::Value, idx: usize) -> Resul
 /// ```rust,no_run
 ///   # async fn f() -> anyhow::Result<()> {
 ///   # use crate::libsql_client::{DatabaseClient, Statement, params};
-///   let db = libsql_client::new_client()?;
+///   let db = libsql_client::new_client().await?;
 ///   db.execute(
 ///       Statement::with_params("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
 ///       params!(64, "socks", 2, 4.5)),

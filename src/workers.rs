@@ -1,9 +1,9 @@
-use super::client::Config;
+use crate::client::Config;
 use async_trait::async_trait;
 use base64::Engine;
 use worker::*;
 
-use super::{QueryResult, Statement};
+use crate::{QueryResult, Statement, Transaction};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -199,13 +199,13 @@ impl Client {
         }
         let resp: String = response.text().await?;
         let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        super::client::json_to_query_result(response_json, stmts_count)
+        crate::client::json_to_query_result(response_json, stmts_count)
             .map_err(|e| worker::Error::from(format!("Error: {} ({:?})", e, request_init.body)))
     }
 }
 
 #[async_trait(?Send)]
-impl super::DatabaseClient for Client {
+impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
@@ -213,5 +213,9 @@ impl super::DatabaseClient for Client {
         self.raw_batch(stmts)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    async fn transaction<'a>(&'a mut self) -> anyhow::Result<Transaction<'a, Self>> {
+        anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
     }
 }

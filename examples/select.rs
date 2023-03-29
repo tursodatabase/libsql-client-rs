@@ -19,7 +19,7 @@ fn result_to_string(query_result: QueryResult) -> Result<String> {
 }
 
 // Bumps a counter for one of the geographic locations picked at random.
-async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
+async fn bump_counter(mut db: impl DatabaseClient) -> Result<String> {
     // Recreate the tables if they do not exist yet
     db.batch([
         "CREATE TABLE IF NOT EXISTS counter(country TEXT, city TEXT, value, PRIMARY KEY(country, city)) WITHOUT ROWID",
@@ -38,23 +38,36 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     let (airport, country, city, latitude, longitude) =
         *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
 
-    db.batch([
-        Statement::with_params(
+    let mut transaction = db.transaction().await?;
+    transaction
+        .execute(Statement::with_params(
             "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
             // Parameters that have a single type can be passed as a regular slice
             &[country, city],
-        ),
-        Statement::with_params(
+        ))
+        .await?;
+    transaction
+        .execute(Statement::with_params(
             "UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?",
             &[country, city],
-        ),
-        Statement::with_params(
+        ))
+        .await?;
+    transaction
+        .execute(Statement::with_params(
             "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
             // Parameters with different types can be passed to a convenience macro - params!()
             params!(latitude, longitude, airport),
-        ),
-    ])
-    .await?;
+        ))
+        .await?;
+    transaction.commit().await?;
+
+    /* NOTICE: interactive transactions only work with WebSocket and local backends. For HTTP, use batches:
+        db.batch([
+            Statement::with_params("INSERT OR IGNORE INTO counter VALUES (?, ?, 0)", &[country, city]),
+            Statement::with_params("UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?", &[country, city]),
+            Statement::with_params("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", params!(latitude, longitude, airport)),
+        ]).await?;
+    */
 
     let counter_response = db.execute("SELECT * FROM counter").await?;
     let scoreboard = result_to_string(counter_response)?;

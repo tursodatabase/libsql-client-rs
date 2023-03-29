@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use anyhow::Result;
 
-use super::{parse_query_result, QueryResult, Statement};
+use crate::{parse_query_result, QueryResult, Statement, Transaction};
 
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
@@ -53,6 +53,13 @@ pub trait DatabaseClient {
         ret.pop();
         Ok(ret)
     }
+
+    /// Starts an interactive transaction and returns a `Transaction` object.
+    /// The object can be later used to `execute()`, `commit()` or `rollback()`
+    /// the interactive transaction.
+    async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a, Self>> {
+        Transaction::new(self).await
+    }
 }
 
 /// A generic client struct, wrapping possible backends.
@@ -60,15 +67,15 @@ pub trait DatabaseClient {
 /// with backends being passed as env parameters.
 pub enum GenericClient {
     #[cfg(feature = "local_backend")]
-    Local(super::local::Client),
+    Local(crate::local::Client),
     #[cfg(feature = "reqwest_backend")]
-    Reqwest(super::reqwest::Client),
+    Reqwest(crate::reqwest::Client),
     #[cfg(feature = "hrana_backend")]
-    Hrana(super::hrana::Client),
+    Hrana(crate::hrana::Client),
     #[cfg(feature = "workers_backend")]
-    Workers(super::workers::Client),
+    Workers(crate::workers::Client),
     #[cfg(feature = "spin_backend")]
-    Spin(super::spin::Client),
+    Spin(crate::spin::Client),
 }
 
 #[async_trait(?Send)]
@@ -90,35 +97,80 @@ impl DatabaseClient for GenericClient {
             Self::Spin(s) => s.raw_batch(stmts).await,
         }
     }
+
+    async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a, Self>> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(_) => Transaction::new(self).await,
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(_) => Transaction::new(self).await,
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(_) => {
+                anyhow::bail!("Interactive transactions are not supported with the reqwest backend. Use batch() instead.")
+            }
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(_) => {
+                anyhow::bail!("Interactive ransactions are not supported with the workers backend. Use batch() instead.")
+            }
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(_) => {
+                anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
+            }
+        }
+    }
 }
 
+/// Configuration for the database client
 pub struct Config {
     pub url: url::Url,
     pub auth_token: Option<String>,
 }
 
+/// Establishes a database client based on `Config` struct
+///
+/// # Examples
+///
+/// ```
+/// # async fn f() {
+/// # use libsql_client::{DatabaseClient, Config};
+/// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
+/// let db = libsql_client::new_client_from_config(config).await.unwrap();
+/// # }
+/// ```
 pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
         "file" => {
-            GenericClient::Local(super::local::Client::new(config.url.to_string())?)
+            GenericClient::Local(crate::local::Client::new(config.url.to_string())?)
         },
         #[cfg(feature = "hrana_backend")]
         "ws" | "wss" => {
-            GenericClient::Hrana(super::hrana::Client::from_config(config).await?)
+            GenericClient::Hrana(crate::hrana::Client::from_config(config).await?)
         },
+        #[cfg(feature = "hrana_backend")]
+        "libsql" => {
+            let mut config = config;
+            config.url = if config.url.scheme() == "libsql" {
+                // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
+                // Safe to unwrap, because we know that the scheme is libsql
+                url::Url::parse(&config.url.as_str().replace("libsql://", "wss://")).unwrap()
+            } else {
+                config.url
+            };
+            GenericClient::Hrana(crate::hrana::Client::from_config(config).await?)
+        }
         #[cfg(feature = "reqwest_backend")]
         "http" | "https" => {
-            GenericClient::Reqwest(super::reqwest::Client::from_config(config)?)
+            GenericClient::Reqwest(crate::reqwest::Client::from_config(config)?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            GenericClient::Workers(super::workers::Client::from_config(config))
+            GenericClient::Workers(crate::workers::Client::from_config(config))
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
-            GenericClient::Spin(super::spin::Client::from_config(config))
+            GenericClient::Spin(crate::spin::Client::from_config(config))
         },
         _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
     })
@@ -136,9 +188,11 @@ pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericCli
 /// # Examples
 ///
 /// ```
-/// # use libsql_client::DatabaseClient;
+/// # async fn run() {
+/// # use libsql_client::{DatabaseClient, Config};
 /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
-/// let db = libsql_client::new_client().unwrap();
+/// let db = libsql_client::new_client().await.unwrap();
+/// # }
 /// ```
 pub async fn new_client() -> anyhow::Result<GenericClient> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
@@ -147,7 +201,7 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     let url = match url::Url::parse(&url) {
         Ok(url) => url,
         Err(_) if cfg!(feature = "local") => {
-            return Ok(GenericClient::Local(super::local::Client::new(url)?))
+            return Ok(GenericClient::Local(crate::local::Client::new(url)?))
         }
         Err(e) => return Err(e.into()),
     };
@@ -173,11 +227,11 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     Ok(match backend.as_str() {
         #[cfg(feature = "local_backend")]
         "local" => {
-            GenericClient::Local(super::local::Client::new(url.as_str())?)
+            GenericClient::Local(crate::local::Client::new(url.as_str())?)
         },
         #[cfg(feature = "reqwest_backend")]
         "reqwest" => {
-            GenericClient::Reqwest(super::reqwest::Client::from_url(url.as_str())?)
+            GenericClient::Reqwest(crate::reqwest::Client::from_url(url.as_str())?)
         },
         #[cfg(feature = "hrana_backend")]
         "hrana" => {
@@ -188,7 +242,7 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
             } else {
                 url
             };
-            GenericClient::Hrana(super::hrana::Client::new(url.as_str(), "").await?)
+            GenericClient::Hrana(crate::hrana::Client::new(url.as_str(), "").await?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {

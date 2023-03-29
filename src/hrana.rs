@@ -1,8 +1,8 @@
-use super::client::Config;
+use crate::client::Config;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{QueryResult, Statement};
+use crate::{QueryResult, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -45,7 +45,7 @@ impl Client {
 }
 
 #[async_trait(?Send)]
-impl super::DatabaseClient for Client {
+impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,

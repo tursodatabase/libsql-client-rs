@@ -1,7 +1,7 @@
 //! `Statement` represents an SQL statement,
 //! which can be later sent to a database.
 
-use super::Value;
+use crate::Value;
 
 /// SQL statement, possibly with bound parameters
 pub struct Statement {
