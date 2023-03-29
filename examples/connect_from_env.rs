@@ -19,7 +19,7 @@ fn result_to_string(query_result: StmtResult) -> Result<String> {
 }
 
 // Bumps a counter for one of the geographic locations picked at random.
-async fn bump_counter(mut db: impl DatabaseClient) -> Result<String> {
+async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     // Recreate the tables if they do not exist yet
     db.batch([
         "CREATE TABLE IF NOT EXISTS counter(country TEXT, city TEXT, value, PRIMARY KEY(country, city)) WITHOUT ROWID",

@@ -4,12 +4,12 @@ use crate::{DatabaseClient, Statement, StmtResult};
 use anyhow::Result;
 
 pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     /// Creates a new transaction.
-    pub async fn new(client: &'a mut Client) -> Result<Transaction<'a, Client>> {
+    pub async fn new(client: &'a Client) -> Result<Transaction<'a, Client>> {
         client.raw_batch(vec![Statement::new("BEGIN")]).await?;
         Ok(Self { client })
     }

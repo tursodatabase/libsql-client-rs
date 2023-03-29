@@ -66,7 +66,7 @@ pub trait DatabaseClient {
     /// Starts an interactive transaction and returns a `Transaction` object.
     /// The object can be later used to `execute()`, `commit()` or `rollback()`
     /// the interactive transaction.
-    async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a, Self>> {
+    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
         Transaction::new(self).await
     }
 }
@@ -107,7 +107,7 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a, Self>> {
+    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(_) => Transaction::new(self).await,

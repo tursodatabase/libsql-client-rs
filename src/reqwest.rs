@@ -176,7 +176,7 @@ impl crate::DatabaseClient for Client {
         crate::client::http_json_to_batch_result(response_json, stmts_count)
     }
 
-    async fn transaction<'a>(&'a mut self) -> anyhow::Result<Transaction<'a, Self>> {
+    async fn transaction<'a>(&'a self) -> anyhow::Result<Transaction<'a, Self>> {
         anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
     }
 }
