@@ -256,11 +256,11 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::connect_from_ctx() directly")
+            anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::from_ctx() directly")
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
-            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::connect_from_url() directly")
+            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::from_url() directly")
         },
         _ => anyhow::bail!("Unknown backend: {backend}. Make sure your backend exists and is enabled with its feature flag"),
     })

@@ -67,7 +67,7 @@ cargo add libsql-client
 
 Example for how to connect to the database and perform a query from a GET handler:
 ```rust
-    let db = libsql_client::reqwest::Client::connect_from_env()?;
+    let db = libsql_client::reqwest::Client::from_env()?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;
@@ -92,7 +92,7 @@ cargo add libsql-client --no-default-features -F workers_backend
 Example for how to connect to the database and perform a query from a GET handler:
 ```rust
 router.get_async("/", |_, ctx| async move {
-    let db = libsql_client::workers::Client::connect_from_ctx(&ctx)?;
+    let db = libsql_client::workers::Client::from_ctx(&ctx)?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;
