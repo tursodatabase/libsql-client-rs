@@ -1,6 +1,6 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
-use crate::{DatabaseClient, Statement, ResultSet};
+use crate::{DatabaseClient, ResultSet, Statement};
 use anyhow::Result;
 
 pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {

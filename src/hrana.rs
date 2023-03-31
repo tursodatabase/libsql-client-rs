@@ -2,7 +2,7 @@ use crate::client::Config;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{BatchResult, Statement, ResultSet};
+use crate::{BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use anyhow::{anyhow, Result};
 
-use crate::{proto, BatchResult, Col, Statement, ResultSet, Transaction, Value};
+use crate::{proto, BatchResult, Col, ResultSet, Statement, Transaction, Value};
 
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions

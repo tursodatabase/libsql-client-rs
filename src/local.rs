@@ -1,4 +1,4 @@
-use crate::{proto, BatchResult, Col, Statement, ResultSet, Value};
+use crate::{proto, BatchResult, Col, ResultSet, Statement, Value};
 use async_trait::async_trait;
 
 use rusqlite::types::Value as RusqliteValue;

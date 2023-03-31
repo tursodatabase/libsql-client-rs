@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{params, DatabaseClient, Statement, ResultSet};
+use libsql_client::{params, DatabaseClient, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
