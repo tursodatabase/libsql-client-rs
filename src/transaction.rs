@@ -1,6 +1,6 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
-use crate::{DatabaseClient, Statement, StmtResult};
+use crate::{DatabaseClient, Statement, ResultSet};
 use anyhow::Result;
 
 pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {
@@ -32,7 +32,7 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # Ok(())
     ///   # }
     /// ```
-    pub async fn execute(&mut self, stmt: Statement) -> Result<StmtResult> {
+    pub async fn execute(&mut self, stmt: Statement) -> Result<ResultSet> {
         self.client.execute(stmt).await
     }
 

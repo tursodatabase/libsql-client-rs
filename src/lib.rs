@@ -13,7 +13,9 @@ pub mod statement;
 pub use statement::Statement;
 
 pub mod proto;
-pub use proto::{BatchResult, Col, StmtResult, Value};
+pub use proto::{BatchResult, Col, Value};
+
+pub use proto::StmtResult as ResultSet;
 
 pub mod client;
 pub use client::{new_client, new_client_from_config, Config, DatabaseClient};

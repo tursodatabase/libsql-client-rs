@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use anyhow::{anyhow, Result};
 
-use crate::{proto, BatchResult, Col, Statement, StmtResult, Transaction, Value};
+use crate::{proto, BatchResult, Col, Statement, ResultSet, Transaction, Value};
 
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
@@ -14,7 +14,7 @@ pub trait DatabaseClient {
     ///
     /// # Arguments
     /// * `stmt` - the SQL statement
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<StmtResult> {
+    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let results = self.raw_batch(std::iter::once(stmt)).await?;
         match (results.step_results.first(), results.step_errors.first()) {
             (Some(Some(result)), Some(None)) => Ok(result.clone()),
@@ -51,7 +51,7 @@ pub trait DatabaseClient {
                     .chain(std::iter::once(Statement::new("END"))),
             )
             .await?;
-        let mut step_results: Vec<Option<StmtResult>> =
+        let mut step_results: Vec<Option<ResultSet>> =
             batch_results.step_results.into_iter().skip(1).collect();
         step_results.pop();
         let mut step_errors: Vec<Option<proto::Error>> =
@@ -354,7 +354,7 @@ pub(crate) fn parse_rows(
 pub(crate) fn parse_query_result(
     result: serde_json::Value,
     idx: usize,
-) -> Result<(Option<StmtResult>, Option<proto::Error>)> {
+) -> Result<(Option<ResultSet>, Option<proto::Error>)> {
     match result {
         serde_json::Value::Object(obj) => {
             if let Some(err) = obj.get("error") {
@@ -386,7 +386,7 @@ pub(crate) fn parse_query_result(
                             let cols = parse_columns(columns.to_vec(), idx)?;
                             let rows = parse_rows(rows.to_vec(), columns.len(), idx)?;
                             // FIXME: affected_row_count and last_insert_rowid are not implemented yet
-                            let stmt_result = StmtResult {
+                            let stmt_result = ResultSet {
                                 cols,
                                 rows,
                                 affected_row_count: 0,
@@ -419,7 +419,7 @@ pub(crate) fn http_json_to_batch_result(
                 ));
             }
 
-            let mut step_results: Vec<Option<StmtResult>> = Vec::with_capacity(stmts_count);
+            let mut step_results: Vec<Option<ResultSet>> = Vec::with_capacity(stmts_count);
             let mut step_errors: Vec<Option<proto::Error>> = Vec::with_capacity(stmts_count);
             for (idx, result) in results.into_iter().enumerate() {
                 let (step_result, step_error) =

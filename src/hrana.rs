@@ -2,7 +2,7 @@ use crate::client::Config;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{BatchResult, Statement, StmtResult};
+use crate::{BatchResult, Statement, ResultSet};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -66,7 +66,7 @@ impl crate::DatabaseClient for Client {
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<StmtResult> {
+    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let stmt: Statement = stmt.into();
         let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.q, true);
         for param in stmt.params {

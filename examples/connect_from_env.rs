@@ -1,10 +1,10 @@
 use anyhow::Result;
-use libsql_client::{new_client, params, DatabaseClient, Statement, StmtResult};
+use libsql_client::{new_client, params, DatabaseClient, Statement, ResultSet};
 use rand::prelude::SliceRandom;
 
-fn result_to_string(query_result: StmtResult) -> Result<String> {
+fn result_to_string(query_result: ResultSet) -> Result<String> {
     let mut ret = String::new();
-    let StmtResult { cols, rows, .. } = query_result;
+    let ResultSet { cols, rows, .. } = query_result;
     for column in &cols {
         ret += &format!("| {:16} |", column.name.as_deref().unwrap_or_default());
     }
