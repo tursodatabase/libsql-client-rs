@@ -15,7 +15,32 @@ pub use statement::Statement;
 pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
-pub use proto::StmtResult as ResultSet;
+pub struct Row {
+    pub values: Vec<Value>,
+}
+pub struct ResultSet {
+    pub columns: Vec<String>,
+    pub rows: Vec<Row>,
+    pub rows_affected: u64,
+    pub last_insert_rowid: Option<i64>,
+}
+
+impl std::convert::From<proto::StmtResult> for ResultSet {
+    fn from(value: proto::StmtResult) -> Self {
+        let columns = value
+            .cols
+            .into_iter()
+            .map(|c| c.name.unwrap_or_default())
+            .collect();
+        let rows = value.rows.into_iter().map(|r| Row { values: r }).collect();
+        ResultSet {
+            columns,
+            rows,
+            rows_affected: value.affected_row_count,
+            last_insert_rowid: value.last_insert_rowid,
+        }
+    }
+}
 
 pub mod client;
 pub use client::{new_client, new_client_from_config, Config, DatabaseClient};

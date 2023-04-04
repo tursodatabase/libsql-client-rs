@@ -76,6 +76,7 @@ impl crate::DatabaseClient for Client {
         self.stream
             .execute(hrana_stmt)
             .await
+            .map(ResultSet::from)
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 }

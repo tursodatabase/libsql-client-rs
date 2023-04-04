@@ -1,4 +1,4 @@
-use crate::{proto, BatchResult, Col, ResultSet, Statement, Value};
+use crate::{proto, proto::StmtResult, BatchResult, Col, Statement, Value};
 use async_trait::async_trait;
 
 use rusqlite::types::Value as RusqliteValue;
@@ -123,7 +123,7 @@ impl Client {
                 rows.push(cells)
             }
             // FIXME: affected_row_count and last_insert_rowid are not implemented yet
-            let stmt_result = ResultSet {
+            let stmt_result = StmtResult {
                 cols,
                 rows,
                 affected_row_count: 0,

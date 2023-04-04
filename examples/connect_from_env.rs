@@ -4,13 +4,13 @@ use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
     let mut ret = String::new();
-    let ResultSet { cols, rows, .. } = query_result;
-    for column in &cols {
-        ret += &format!("| {:16} |", column.name.as_deref().unwrap_or_default());
+    let ResultSet { columns, rows, .. } = query_result;
+    for column in &columns {
+        ret += &format!("| {:16} |", column);
     }
     ret += "\n| -------------------------------------------------------- |\n";
     for row in rows {
-        for cell in row {
+        for cell in row.values {
             ret += &format!("| {:16} |", cell);
         }
         ret += "\n";

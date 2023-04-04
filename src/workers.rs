@@ -230,7 +230,7 @@ impl Client {
             proto::ServerMsg::ResponseOk {
                 request_id: _,
                 response: proto::Response::Execute(proto::ExecuteResp { result }),
-            } => Ok(result),
+            } => Ok(ResultSet::from(result)),
             proto::ServerMsg::ResponseError {
                 request_id: _,
                 error,
