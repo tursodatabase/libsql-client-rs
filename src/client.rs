@@ -118,9 +118,7 @@ impl DatabaseClient for GenericClient {
                 anyhow::bail!("Interactive transactions are not supported with the reqwest backend. Use batch() instead.")
             }
             #[cfg(feature = "workers_backend")]
-            Self::Workers(_) => {
-                anyhow::bail!("Interactive ransactions are not supported with the workers backend. Use batch() instead.")
-            }
+            Self::Workers(_) => Transaction::new(self).await,
             #[cfg(feature = "spin_backend")]
             Self::Spin(_) => {
                 anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
@@ -146,7 +144,7 @@ pub struct Config {
 /// let db = libsql_client::new_client_from_config(config).await.unwrap();
 /// # }
 /// ```
-pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericClient> {
+pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<GenericClient> {
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
@@ -175,7 +173,7 @@ pub async fn new_client_from_config(config: Config) -> anyhow::Result<GenericCli
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            GenericClient::Workers(crate::workers::Client::from_config(config))
+            GenericClient::Workers(crate::workers::Client::from_config(config).await?)
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
