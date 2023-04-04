@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.20.0"
+version = "0.21.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -37,6 +37,7 @@ local_backend = ["rusqlite"]
 spin_backend = ["spin-sdk", "http", "bytes"]
 hrana_backend = ["hrana-client"]
 separate_url_for_queries = []
+mapping_names_to_values_in_rows = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
