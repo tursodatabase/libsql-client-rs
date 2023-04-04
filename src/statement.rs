@@ -5,7 +5,7 @@ use crate::Value;
 
 /// SQL statement, possibly with bound parameters
 pub struct Statement {
-    pub(crate) q: String,
+    pub(crate) sql: String,
     pub(crate) params: Vec<Value>,
 }
 
@@ -19,7 +19,7 @@ impl Statement {
     /// ```
     pub fn new(q: impl Into<String>) -> Statement {
         Self {
-            q: q.into(),
+            sql: q.into(),
             params: vec![],
         }
     }
@@ -33,7 +33,7 @@ impl Statement {
     /// ```
     pub fn with_args(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
         Self {
-            q: q.into(),
+            sql: q.into(),
             params: params.iter().map(|p| p.clone().into()).collect(),
         }
     }
@@ -41,7 +41,7 @@ impl Statement {
 
 impl From<String> for Statement {
     fn from(q: String) -> Statement {
-        Statement { q, params: vec![] }
+        Statement { sql: q, params: vec![] }
     }
 }
 
@@ -60,7 +60,7 @@ impl From<&&str> for Statement {
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.params.is_empty() {
-            write!(f, "{}", serde_json::json!(self.q))
+            write!(f, "{}", serde_json::json!(self.sql))
         } else {
             let params: Vec<String> = self
                 .params
@@ -70,7 +70,7 @@ impl std::fmt::Display for Statement {
             write!(
                 f,
                 "{{\"q\": {}, \"params\": [{}]}}",
-                serde_json::json!(self.q),
+                serde_json::json!(self.sql),
                 params.join(",")
             )
         }

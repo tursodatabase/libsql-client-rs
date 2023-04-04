@@ -90,7 +90,7 @@ impl Client {
         let mut step_errors = vec![];
         for stmt in stmts {
             let stmt = stmt.into();
-            let sql_string = &stmt.q;
+            let sql_string = &stmt.sql;
             let params = rusqlite::params_from_iter(
                 stmt.params
                     .into_iter()
