@@ -20,7 +20,7 @@ impl Client {
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> anyhow::Result<Self> {
+    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Result<Self> {
         let token = token.into();
         let url = url.into();
         // Auto-update the URL to start with https://.
@@ -34,52 +34,42 @@ impl Client {
         } else {
             url
         };
-        let url = url::Url::parse(&url).context("Failed to parse URL")?;
+        let url = url::Url::parse(&url)
+            .context("Failed to parse URL")
+            .map_err(|e| Error::from(format!("{e}")))?;
 
-        let mut req =
-            Request::new(url.as_str(), Method::Get).map_err(|e| anyhow::anyhow!("{}", e))?;
-        let headers = req.headers_mut().map_err(|e| anyhow::anyhow!("{}", e))?;
-        headers
-            .set("upgrade", "websocket")
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        headers
-            .set("Authentication", &format!("Bearer {token}"))
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let mut req = Request::new(url.as_str(), Method::Get)?;
+        let headers = req.headers_mut()?;
+        headers.set("upgrade", "websocket")?;
+        headers.set("Authentication", &format!("Bearer {token}"))?;
 
-        let res = Fetch::Request(req)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let res = Fetch::Request(req).send().await?;
 
         let socket = match res.websocket() {
             Some(ws) => ws,
-            None => anyhow::bail!("server did not accept"),
+            None => {
+                return Err(Error::RustError(
+                    "Failed to upgrade to websocket".to_string(),
+                ))
+            }
         };
 
-        let mut event_stream = socket.events().map_err(|e| anyhow::anyhow!("{}", e))?;
+        let mut event_stream = socket.events()?;
 
-        socket.accept().map_err(|e| anyhow::anyhow!("{}", e))?;
+        socket.accept()?;
 
         let jwt = if token.is_empty() { None } else { Some(token) };
-        socket
-            .send(&proto::ClientMsg::Hello { jwt })
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        socket.send(&proto::ClientMsg::Hello { jwt })?;
 
-        Self::recv_response(&mut event_stream)
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        Self::recv_response(&mut event_stream).await?;
 
         // NOTICE: only a single stream id is used for now
-        socket
-            .send(&proto::ClientMsg::Request {
-                request_id: 0,
-                request: proto::Request::OpenStream(proto::OpenStreamReq { stream_id: 0 }),
-            })
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        socket.send(&proto::ClientMsg::Request {
+            request_id: 0,
+            request: proto::Request::OpenStream(proto::OpenStreamReq { stream_id: 0 }),
+        })?;
 
-        Self::recv_response(&mut event_stream)
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        Self::recv_response(&mut event_stream).await?;
         console_log!("Response received");
         drop(event_stream);
         Ok(Self {
@@ -89,7 +79,7 @@ impl Client {
     }
 
     /// Creates a database client from a `Config` object.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: Config) -> Result<Self> {
         Self::new(config.url, config.auth_token.unwrap_or_default()).await
     }
 
@@ -121,6 +111,7 @@ impl Client {
         } else {
             Client::new(url, "").await
         }
+        .map_err(|e| anyhow::anyhow!(format!("{e}")))
     }
 
     /// Establishes a database client from Cloudflare Workers context.
@@ -130,14 +121,10 @@ impl Client {
     /// * `LIBSQL_CLIENT_PASS`
     /// # Arguments
     /// * `ctx` - Cloudflare Workers route context
-    pub async fn from_ctx<D>(ctx: &worker::RouteContext<D>) -> anyhow::Result<Self> {
-        let token = ctx
-            .secret("LIBSQL_CLIENT_TOKEN")
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    pub async fn from_ctx<D>(ctx: &worker::RouteContext<D>) -> Result<Self> {
+        let token = ctx.secret("LIBSQL_CLIENT_TOKEN")?;
         Self::new(
-            ctx.secret("LIBSQL_CLIENT_URL")
-                .map_err(|e| anyhow::anyhow!("{e}"))?
-                .to_string(),
+            ctx.secret("LIBSQL_CLIENT_URL")?.to_string(),
             token.to_string(),
         )
         .await

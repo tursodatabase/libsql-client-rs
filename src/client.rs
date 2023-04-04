@@ -185,7 +185,7 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Generi
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            GenericClient::Workers(crate::workers::Client::from_config(config).await?)
+            GenericClient::Workers(crate::workers::Client::from_config(config).await.map_err(|e| anyhow::anyhow!("{}", e))?)
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
