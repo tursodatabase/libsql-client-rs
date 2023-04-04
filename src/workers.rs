@@ -184,8 +184,8 @@ impl Client {
 
         for stmt in stmts.into_iter() {
             let stmt: Statement = stmt.into();
-            let mut hrana_stmt = proto::Stmt::new(stmt.q, true);
-            for param in stmt.params {
+            let mut hrana_stmt = proto::Stmt::new(stmt.sql, true);
+            for param in stmt.args {
                 hrana_stmt.bind(param);
             }
             batch.step(None, hrana_stmt);
@@ -215,8 +215,8 @@ impl Client {
 
     async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let stmt: Statement = stmt.into();
-        let mut hrana_stmt = proto::Stmt::new(stmt.q, true);
-        for param in stmt.params {
+        let mut hrana_stmt = proto::Stmt::new(stmt.sql, true);
+        for param in stmt.args {
             hrana_stmt.bind(param);
         }
 

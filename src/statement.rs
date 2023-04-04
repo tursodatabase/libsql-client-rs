@@ -5,8 +5,8 @@ use crate::Value;
 
 /// SQL statement, possibly with bound parameters
 pub struct Statement {
-    pub(crate) q: String,
-    pub(crate) params: Vec<Value>,
+    pub(crate) sql: String,
+    pub(crate) args: Vec<Value>,
 }
 
 impl Statement {
@@ -19,8 +19,8 @@ impl Statement {
     /// ```
     pub fn new(q: impl Into<String>) -> Statement {
         Self {
-            q: q.into(),
-            params: vec![],
+            sql: q.into(),
+            args: vec![],
         }
     }
 
@@ -29,19 +29,22 @@ impl Statement {
     /// # Examples
     ///
     /// ```
-    /// let stmt = libsql_client::Statement::with_params("UPDATE t SET x = ? WHERE key = ?", &[3, 8]);
+    /// let stmt = libsql_client::Statement::with_args("UPDATE t SET x = ? WHERE key = ?", &[3, 8]);
     /// ```
-    pub fn with_params(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
+    pub fn with_args(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
         Self {
-            q: q.into(),
-            params: params.iter().map(|p| p.clone().into()).collect(),
+            sql: q.into(),
+            args: params.iter().map(|p| p.clone().into()).collect(),
         }
     }
 }
 
 impl From<String> for Statement {
     fn from(q: String) -> Statement {
-        Statement { q, params: vec![] }
+        Statement {
+            sql: q,
+            args: vec![],
+        }
     }
 }
 
@@ -59,18 +62,18 @@ impl From<&&str> for Statement {
 
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.params.is_empty() {
-            write!(f, "{}", serde_json::json!(self.q))
+        if self.args.is_empty() {
+            write!(f, "{}", serde_json::json!(self.sql))
         } else {
             let params: Vec<String> = self
-                .params
+                .args
                 .iter()
                 .map(|p| serde_json::json!(p)["value"].to_string())
                 .collect();
             write!(
                 f,
                 "{{\"q\": {}, \"params\": [{}]}}",
-                serde_json::json!(self.q),
+                serde_json::json!(self.sql),
                 params.join(",")
             )
         }
