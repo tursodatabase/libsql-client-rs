@@ -21,7 +21,7 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # async fn f() -> anyhow::Result<()> {
     ///   # use crate::libsql_client::{DatabaseClient, Statement, args};
     ///   let mut db = libsql_client::new_client().await?;
-    ///   let mut tx = db.transaction().await?;
+    ///   let tx = db.transaction().await?;
     ///   tx.execute(Statement::with_args("INSERT INTO users (name) VALUES (?)", args!["John"])).await?;
     ///   let res = tx.execute(Statement::with_args("INSERT INTO users (name) VALUES (?)", args!["Jane"])).await;
     ///   if res.is_err() {
@@ -32,7 +32,7 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # Ok(())
     ///   # }
     /// ```
-    pub async fn execute(&mut self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+    pub async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         self.client.execute(stmt.into()).await
     }
 

@@ -38,7 +38,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     let (airport, country, city, latitude, longitude) =
         *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
 
-    let mut transaction = db.transaction().await?;
+    let transaction = db.transaction().await?;
     transaction
         .execute(Statement::with_args(
             "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
