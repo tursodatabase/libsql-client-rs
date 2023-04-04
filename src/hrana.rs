@@ -32,6 +32,36 @@ impl Client {
         })
     }
 
+    /// Creates a database client, given a `Url`
+    ///
+    /// # Arguments
+    /// * `url` - `Url` object of the database endpoint. This cannot be a relative URL;
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use libsql_client::reqwest::Client;
+    /// use url::Url;
+    ///
+    /// let url = Url::parse("https://localhost:8080?jwt=<access token>").unwrap();
+    /// let db = Client::from_url(&url).unwrap();
+    /// ```
+    pub async fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
+    where
+        <T as TryInto<url::Url>>::Error: std::fmt::Display,
+    {
+        let url = url
+            .try_into()
+            .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
+        let mut params = url.query_pairs();
+        // Try a jwt=XXX parameter first, continue if not found
+        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "jwt") {
+            Client::new(url.as_str(), token).await
+        } else {
+            Client::new(url.as_str(), "").await
+        }
+    }
+
     /// Creates a database client from a `Config` object.
     pub async fn from_config(config: Config) -> Result<Self> {
         Self::new(config.url, config.auth_token.unwrap_or_default()).await
