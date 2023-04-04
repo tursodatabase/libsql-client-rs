@@ -17,6 +17,8 @@ pub use proto::{BatchResult, Col, Value};
 
 pub struct Row {
     pub values: Vec<Value>,
+    #[cfg(feature = "mapping_names_to_values_in_rows")]
+    pub value_map: std::collections::HashMap<String, Value>,
 }
 pub struct ResultSet {
     pub columns: Vec<String>,
@@ -27,12 +29,28 @@ pub struct ResultSet {
 
 impl std::convert::From<proto::StmtResult> for ResultSet {
     fn from(value: proto::StmtResult) -> Self {
-        let columns = value
+        let columns: Vec<String> = value
             .cols
             .into_iter()
             .map(|c| c.name.unwrap_or_default())
             .collect();
-        let rows = value.rows.into_iter().map(|r| Row { values: r }).collect();
+        let rows = value
+            .rows
+            .into_iter()
+            .map(|values| {
+                #[cfg(feature = "mapping_names_to_values_in_rows")]
+                let value_map = columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| (c.to_string(), values[i].clone()))
+                    .collect();
+                Row {
+                    values,
+                    #[cfg(feature = "mapping_names_to_values_in_rows")]
+                    value_map,
+                }
+            })
+            .collect();
         ResultSet {
             columns,
             rows,
