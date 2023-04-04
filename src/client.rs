@@ -246,32 +246,15 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     });
     Ok(match backend.as_str() {
         #[cfg(feature = "local_backend")]
-        "local" => {
-            GenericClient::Local(crate::local::Client::new(url.as_str())?)
-        },
+        "local" => GenericClient::Local(crate::local::Client::new(url.as_str())?),
         #[cfg(feature = "reqwest_backend")]
-        "reqwest" => {
-            GenericClient::Reqwest(crate::reqwest::Client::from_url(url.as_str())?)
-        },
+        "reqwest" => GenericClient::Reqwest(crate::reqwest::Client::from_url(url.as_str())?),
         #[cfg(feature = "hrana_backend")]
-        "hrana" => {
-            let url = if url.scheme() == "libsql" {
-                // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
-                // Safe to unwrap, because we know that the scheme is libsql
-                url::Url::parse(&url.as_str().replace("libsql://", "wss://")).unwrap()
-            } else {
-                url
-            };
-            GenericClient::Hrana(crate::hrana::Client::new(url.as_str(), "").await?)
-        },
+        "hrana" => GenericClient::Hrana(crate::hrana::Client::from_url(url).await?),
         #[cfg(feature = "workers_backend")]
-        "workers" => {
-            anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::from_ctx() directly")
-        },
+        "workers" => anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::from_ctx() directly"),
         #[cfg(feature = "spin_backend")]
-        "spin" => {
-            anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::from_url() directly")
-        },
+        "spin" => anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::from_url() directly"),
         _ => anyhow::bail!("Unknown backend: {backend}. Make sure your backend exists and is enabled with its feature flag"),
     })
 }
