@@ -19,11 +19,11 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///
     /// ```rust,no_run
     ///   # async fn f() -> anyhow::Result<()> {
-    ///   # use crate::libsql_client::{DatabaseClient, Statement, params};
+    ///   # use crate::libsql_client::{DatabaseClient, Statement, args};
     ///   let mut db = libsql_client::new_client().await?;
     ///   let mut tx = db.transaction().await?;
-    ///   tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", params!["John"])).await?;
-    ///   let res = tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", params!["Jane"])).await;
+    ///   tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", args!["John"])).await?;
+    ///   let res = tx.execute(Statement::with_params("INSERT INTO users (name) VALUES (?)", args!["Jane"])).await;
     ///   if res.is_err() {
     ///     tx.rollback().await?;
     ///   } else {

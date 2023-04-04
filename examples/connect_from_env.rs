@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{new_client, params, DatabaseClient, ResultSet, Statement};
+use libsql_client::{new_client, args, DatabaseClient, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -55,8 +55,8 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
     transaction
         .execute(Statement::with_params(
             "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
-            // Parameters with different types can be passed to a convenience macro - params!()
-            params!(latitude, longitude, airport),
+            // Parameters with different types can be passed to a convenience macro - args!()
+            args!(latitude, longitude, airport),
         ))
         .await?;
     transaction.commit().await?;
@@ -65,7 +65,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
         db.batch([
             Statement::with_params("INSERT OR IGNORE INTO counter VALUES (?, ?, 0)", &[country, city]),
             Statement::with_params("UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?", &[country, city]),
-            Statement::with_params("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", params!(latitude, longitude, airport)),
+            Statement::with_params("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", args!(latitude, longitude, airport)),
         ]).await?;
     */
 

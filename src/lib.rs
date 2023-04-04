@@ -45,17 +45,17 @@ pub mod hrana;
 ///
 /// ```rust,no_run
 ///   # async fn f() -> anyhow::Result<()> {
-///   # use crate::libsql_client::{DatabaseClient, Statement, params};
+///   # use crate::libsql_client::{DatabaseClient, Statement, args};
 ///   let db = libsql_client::new_client().await?;
 ///   db.execute(
 ///       Statement::with_params("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
-///       params!(64, "socks", 2, 4.5)),
+///       args!(64, "socks", 2, 4.5)),
 ///   ).await?;
 ///   # Ok(())
 ///   # }
 /// ```
 #[macro_export]
-macro_rules! params {
+macro_rules! args {
     () => { &[] };
     ($($param:expr),+ $(,)?) => {
         &[$($param.into()),+] as &[libsql_client::Value]

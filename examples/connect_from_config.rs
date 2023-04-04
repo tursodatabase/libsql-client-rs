@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{new_client_from_config, params, DatabaseClient, ResultSet, Statement};
+use libsql_client::{new_client_from_config, args, DatabaseClient, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -50,8 +50,8 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
         ),
         Statement::with_params(
             "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
-            // Parameters with different types can be passed to a convenience macro - params!()
-            params!(latitude, longitude, airport),
+            // Parameters with different types can be passed to a convenience macro - args!()
+            args!(latitude, longitude, airport),
         ),
     ])
     .await?;
