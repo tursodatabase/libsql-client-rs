@@ -44,21 +44,27 @@ impl Client {
     /// use url::Url;
     ///
     /// let url = Url::parse("https://localhost:8080?jwt=<access token>").unwrap();
-    /// let db = Client::from_url(&url).unwrap();
+    /// let db = Client::from_url(url).unwrap();
     /// ```
     pub async fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
     where
         <T as TryInto<url::Url>>::Error: std::fmt::Display,
     {
-        let url = url
+        let url: url::Url = url
             .try_into()
             .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
+        let url_str = if url.scheme() == "libsql" {
+            let new_url = format!("wss://{}", url.as_str().strip_prefix("libsql://").unwrap());
+            url::Url::parse(&new_url).unwrap().to_string()
+        } else {
+            url.to_string()
+        };
         let mut params = url.query_pairs();
         // Try a jwt=XXX parameter first, continue if not found
         if let Some((_, token)) = params.find(|(param_key, _)| param_key == "jwt") {
-            Client::new(url.as_str(), token).await
+            Client::new(url_str, token).await
         } else {
-            Client::new(url.as_str(), "").await
+            Client::new(url_str, "").await
         }
     }
 
