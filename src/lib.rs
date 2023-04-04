@@ -48,7 +48,7 @@ pub mod hrana;
 ///   # use crate::libsql_client::{DatabaseClient, Statement, args};
 ///   let db = libsql_client::new_client().await?;
 ///   db.execute(
-///       Statement::with_params("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
+///       Statement::with_args("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
 ///       args!(64, "socks", 2, 4.5)),
 ///   ).await?;
 ///   # Ok(())

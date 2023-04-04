@@ -29,9 +29,9 @@ impl Statement {
     /// # Examples
     ///
     /// ```
-    /// let stmt = libsql_client::Statement::with_params("UPDATE t SET x = ? WHERE key = ?", &[3, 8]);
+    /// let stmt = libsql_client::Statement::with_args("UPDATE t SET x = ? WHERE key = ?", &[3, 8]);
     /// ```
-    pub fn with_params(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
+    pub fn with_args(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
         Self {
             q: q.into(),
             params: params.iter().map(|p| p.clone().into()).collect(),

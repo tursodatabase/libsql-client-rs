@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{new_client, args, DatabaseClient, ResultSet, Statement};
+use libsql_client::{args, new_client, DatabaseClient, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -40,20 +40,20 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 
     let mut transaction = db.transaction().await?;
     transaction
-        .execute(Statement::with_params(
+        .execute(Statement::with_args(
             "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
             // Parameters that have a single type can be passed as a regular slice
             &[country, city],
         ))
         .await?;
     transaction
-        .execute(Statement::with_params(
+        .execute(Statement::with_args(
             "UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?",
             &[country, city],
         ))
         .await?;
     transaction
-        .execute(Statement::with_params(
+        .execute(Statement::with_args(
             "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
             // Parameters with different types can be passed to a convenience macro - args!()
             args!(latitude, longitude, airport),
@@ -63,9 +63,9 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 
     /* NOTICE: interactive transactions only work with WebSocket and local backends. For HTTP, use batches:
         db.batch([
-            Statement::with_params("INSERT OR IGNORE INTO counter VALUES (?, ?, 0)", &[country, city]),
-            Statement::with_params("UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?", &[country, city]),
-            Statement::with_params("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", args!(latitude, longitude, airport)),
+            Statement::with_args("INSERT OR IGNORE INTO counter VALUES (?, ?, 0)", &[country, city]),
+            Statement::with_args("UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?", &[country, city]),
+            Statement::with_args("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", args!(latitude, longitude, airport)),
         ]).await?;
     */
 

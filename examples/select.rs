@@ -39,15 +39,15 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
         *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
 
     db.batch([
-        Statement::with_params(
+        Statement::with_args(
             "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
             &[country, city],
         ),
-        Statement::with_params(
+        Statement::with_args(
             "UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?",
             &[country, city],
         ),
-        Statement::with_params(
+        Statement::with_args(
             "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
             args!(latitude, longitude, airport),
         ),
