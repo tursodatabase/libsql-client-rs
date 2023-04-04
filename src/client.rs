@@ -43,7 +43,7 @@ pub trait DatabaseClient {
     async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<BatchResult> {
+    ) -> Result<Vec<ResultSet>> {
         let batch_results = self
             .raw_batch(
                 std::iter::once(Statement::new("BEGIN"))
@@ -51,16 +51,24 @@ pub trait DatabaseClient {
                     .chain(std::iter::once(Statement::new("END"))),
             )
             .await?;
-        let mut step_results: Vec<Option<ResultSet>> =
-            batch_results.step_results.into_iter().skip(1).collect();
-        step_results.pop();
-        let mut step_errors: Vec<Option<proto::Error>> =
-            batch_results.step_errors.into_iter().skip(1).collect();
-        step_errors.pop();
-        Ok(BatchResult {
-            step_results,
-            step_errors,
-        })
+        let step_error: Option<proto::Error> = batch_results
+            .step_errors
+            .into_iter()
+            .skip(1)
+            .find(|e| e.is_some())
+            .flatten();
+        if let Some(error) = step_error {
+            return Err(anyhow::anyhow!(error.message));
+        }
+        let mut step_results: Vec<Result<ResultSet>> = batch_results
+            .step_results
+            .into_iter()
+            .skip(1) // BEGIN is not counted in the result, it's implicitly ignored
+            .map(|maybe_rs| maybe_rs.ok_or_else(|| anyhow!("Unexpected missing result set")))
+            .collect();
+        step_results.pop(); // END is not counted in the result, it's implicitly ignored
+                            // Collect all the results into a single Result
+        step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
     }
 
     /// Starts an interactive transaction and returns a `Transaction` object.
