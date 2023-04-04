@@ -6,7 +6,7 @@ use crate::Value;
 /// SQL statement, possibly with bound parameters
 pub struct Statement {
     pub(crate) sql: String,
-    pub(crate) params: Vec<Value>,
+    pub(crate) args: Vec<Value>,
 }
 
 impl Statement {
@@ -20,7 +20,7 @@ impl Statement {
     pub fn new(q: impl Into<String>) -> Statement {
         Self {
             sql: q.into(),
-            params: vec![],
+            args: vec![],
         }
     }
 
@@ -34,14 +34,17 @@ impl Statement {
     pub fn with_args(q: impl Into<String>, params: &[impl Into<Value> + Clone]) -> Statement {
         Self {
             sql: q.into(),
-            params: params.iter().map(|p| p.clone().into()).collect(),
+            args: params.iter().map(|p| p.clone().into()).collect(),
         }
     }
 }
 
 impl From<String> for Statement {
     fn from(q: String) -> Statement {
-        Statement { sql: q, params: vec![] }
+        Statement {
+            sql: q,
+            args: vec![],
+        }
     }
 }
 
@@ -59,11 +62,11 @@ impl From<&&str> for Statement {
 
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.params.is_empty() {
+        if self.args.is_empty() {
             write!(f, "{}", serde_json::json!(self.sql))
         } else {
             let params: Vec<String> = self
-                .params
+                .args
                 .iter()
                 .map(|p| serde_json::json!(p)["value"].to_string())
                 .collect();

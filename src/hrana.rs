@@ -55,7 +55,7 @@ impl crate::DatabaseClient for Client {
         for stmt in stmts.into_iter() {
             let stmt: Statement = stmt.into();
             let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.sql, true);
-            for param in stmt.params {
+            for param in stmt.args {
                 hrana_stmt.bind(param);
             }
             batch.step(None, hrana_stmt);
@@ -69,7 +69,7 @@ impl crate::DatabaseClient for Client {
     async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let stmt: Statement = stmt.into();
         let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.sql, true);
-        for param in stmt.params {
+        for param in stmt.args {
             hrana_stmt.bind(param);
         }
 

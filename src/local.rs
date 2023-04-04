@@ -92,7 +92,7 @@ impl Client {
             let stmt = stmt.into();
             let sql_string = &stmt.sql;
             let params = rusqlite::params_from_iter(
-                stmt.params
+                stmt.args
                     .into_iter()
                     .map(ValueWrapper)
                     .map(RusqliteValue::from),
