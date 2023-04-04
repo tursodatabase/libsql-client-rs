@@ -32,8 +32,8 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # Ok(())
     ///   # }
     /// ```
-    pub async fn execute(&mut self, stmt: Statement) -> Result<ResultSet> {
-        self.client.execute(stmt).await
+    pub async fn execute(&mut self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+        self.client.execute(stmt.into()).await
     }
 
     /// Commits the transaction to the database.
