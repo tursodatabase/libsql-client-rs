@@ -15,11 +15,14 @@ pub use statement::Statement;
 pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Row {
     pub values: Vec<Value>,
     #[cfg(feature = "mapping_names_to_values_in_rows")]
     pub value_map: std::collections::HashMap<String, Value>,
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResultSet {
     pub columns: Vec<String>,
     pub rows: Vec<Row>,
