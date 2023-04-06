@@ -59,9 +59,8 @@ impl Client {
         socket.accept()?;
 
         let jwt = if token.is_empty() { None } else { Some(token) };
-        socket.send(&proto::ClientMsg::Hello { jwt })?;
 
-        Self::recv_response(&mut event_stream).await?;
+        socket.send(&proto::ClientMsg::Hello { jwt })?;
 
         // NOTICE: only a single stream id is used for now
         socket.send(&proto::ClientMsg::Request {
@@ -69,8 +68,12 @@ impl Client {
             request: proto::Request::OpenStream(proto::OpenStreamReq { stream_id: 0 }),
         })?;
 
+        // Wait for Hello and OpenStream responses
+        // TODO: they could be pipelined with the first request to save latency
         Self::recv_response(&mut event_stream).await?;
-        console_log!("Response received");
+        Self::recv_response(&mut event_stream).await?;
+
+        console_log!("Stream opened");
         drop(event_stream);
         Ok(Self {
             socket,
