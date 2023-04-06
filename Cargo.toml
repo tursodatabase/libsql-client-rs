@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.22.2"
+version = "0.22.3"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -28,6 +28,7 @@ hrana-client = { version = "0.3.0", optional = true }
 hrana-client-proto = "0.1.1"
 futures-util = { version = "0.3.21", optional = true }
 serde = "1.0.159"
+tracing = "0.1.37"
 
 [features]
 default = ["local_backend", "hrana_backend", "reqwest_backend"]

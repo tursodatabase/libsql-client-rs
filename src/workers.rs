@@ -69,11 +69,13 @@ impl Client {
         })?;
 
         // Wait for Hello and OpenStream responses
-        // TODO: they could be pipelined with the first request to save latency
+        // TODO: they could be pipelined with the first request to save latency.
+        // For that, we need to keep the event stream open in the Client,
+        // but that's tricky with the borrow checker.
         Self::recv_response(&mut event_stream).await?;
         Self::recv_response(&mut event_stream).await?;
 
-        console_log!("Stream opened");
+        tracing::debug!("Stream opened");
         drop(event_stream);
         Ok(Self {
             socket,
