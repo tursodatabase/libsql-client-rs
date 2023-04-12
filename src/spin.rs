@@ -168,6 +168,7 @@ impl crate::DatabaseClient for Client {
 */
 
 impl Client {
+    /// Executes a single SQL statement.
     pub fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let results = self.raw_batch(std::iter::once(stmt))?;
         match (results.step_results.first(), results.step_errors.first()) {
