@@ -1,8 +1,10 @@
 use crate::client::Config;
-use async_trait::async_trait;
+use crate::proto;
+// use async_trait::async_trait;
+use anyhow::{anyhow, Result};
 use base64::Engine;
 
-use crate::{BatchResult, Statement, Transaction};
+use crate::{BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -94,13 +96,11 @@ impl Client {
     /// let url  = Url::parse("https://foo:bar@localhost:8080").unwrap();
     /// let db = Client::from_url(url).unwrap();
     /// ```
-    pub fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
+    pub fn from_url<T: TryInto<url::Url>>(url: T) -> Result<Client>
     where
         <T as TryInto<url::Url>>::Error: std::fmt::Display,
     {
-        let url = url
-            .try_into()
-            .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
+        let url = url.try_into().map_err(|e| anyhow!(format!("{e}")))?;
         let mut params = url.query_pairs();
         // Try a token=XXX parameter first, continue if not found
         if let Some((_, token)) = params.find(|(param_key, _)| param_key == "token") {
@@ -111,16 +111,16 @@ impl Client {
         let password = url.password().unwrap_or_default();
         let mut url = url.clone();
         url.set_username("")
-            .map_err(|_| anyhow::anyhow!("Could not extract username from URL. Invalid URL?"))?;
+            .map_err(|_| anyhow!("Could not extract username from URL. Invalid URL?"))?;
         url.set_password(None)
-            .map_err(|_| anyhow::anyhow!("Could not extract password from URL. Invalid URL?"))?;
+            .map_err(|_| anyhow!("Could not extract password from URL. Invalid URL?"))?;
         Ok(Client::from_credentials(url.as_str(), username, password))
     }
 
-    fn raw_batch(
+    pub fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
+    ) -> Result<BatchResult> {
         // FIXME: serialize and deserialize with existing routines from sqld
         let mut body = "{\"statements\": [".to_string();
         let mut stmts_count = 0;
@@ -150,16 +150,69 @@ impl Client {
     }
 }
 
+/* FIXME: the code below provides async API. Spin does not support async Rust yet,
+**        so let's cook a sync API instead
 #[async_trait(?Send)]
 impl crate::DatabaseClient for Client {
     async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
-        self.raw_batch(stmts).map_err(|e| anyhow::anyhow!("{e}"))
+    ) -> Result<BatchResult> {
+        self.raw_batch(stmts).map_err(|e| anyhow!("{e}"))
     }
 
-    async fn transaction<'a>(&'a self) -> anyhow::Result<Transaction<'a, Self>> {
+    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
         anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
+    }
+}
+*/
+
+impl Client {
+    pub fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+        let results = self.raw_batch(std::iter::once(stmt))?;
+        match (results.step_results.first(), results.step_errors.first()) {
+            (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
+            (Some(None), Some(Some(err))) => Err(anyhow!(err.message.clone())),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
+    /// Each statement is going to run in its own transaction,
+    /// unless they're wrapped in BEGIN and END
+    ///
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    pub fn batch(
+        &self,
+        stmts: impl IntoIterator<Item = impl Into<Statement>>,
+    ) -> Result<Vec<ResultSet>> {
+        let batch_results = self.raw_batch(
+            std::iter::once(Statement::new("BEGIN"))
+                .chain(stmts.into_iter().map(|s| s.into()))
+                .chain(std::iter::once(Statement::new("END"))),
+        )?;
+        let step_error: Option<proto::Error> = batch_results
+            .step_errors
+            .into_iter()
+            .skip(1)
+            .find(|e| e.is_some())
+            .flatten();
+        if let Some(error) = step_error {
+            return Err(anyhow!(error.message));
+        }
+        let mut step_results: Vec<Result<ResultSet>> = batch_results
+            .step_results
+            .into_iter()
+            .skip(1) // BEGIN is not counted in the result, it's implicitly ignored
+            .map(|maybe_rs| {
+                maybe_rs
+                    .map(ResultSet::from)
+                    .ok_or_else(|| anyhow!("Unexpected missing result set"))
+            })
+            .collect();
+        step_results.pop(); // END is not counted in the result, it's implicitly ignored
+                            // Collect all the results into a single Result
+        step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
     }
 }

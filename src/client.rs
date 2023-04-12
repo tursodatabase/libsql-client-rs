@@ -115,7 +115,7 @@ impl DatabaseClient for GenericClient {
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.raw_batch(stmts).await,
             #[cfg(feature = "spin_backend")]
-            Self::Spin(s) => s.raw_batch(stmts).await,
+            Self::Spin(s) => s.raw_batch(stmts),
         }
     }
 
