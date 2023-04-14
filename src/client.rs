@@ -200,9 +200,8 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Generi
 /// # Env
 /// * `LIBSQL_CLIENT_URL` - URL of the database endpoint - e.g. a https:// endpoint for remote connections
 ///   (with specified credentials) or local file:/// path for a local database
-/// * (optional) `LIBSQL_CLIENT_BACKEND` - one of the available backends,
-///   e.g. `reqwest`, `local`, `workers`. The library will try to deduce the backend
-///   from the URL if not set explicitly. For instance, it will assume that https:// is not a local file.
+/// * (optional) `LIBSQL_CLIENT_TOKEN` - authentication token for the database. Skip if your database
+///   does not require authentication
 /// *
 /// # Examples
 ///
