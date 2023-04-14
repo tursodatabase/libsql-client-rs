@@ -217,46 +217,12 @@ pub async fn new_client() -> anyhow::Result<GenericClient> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
         anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
     })?;
-    let url = match url::Url::parse(&url) {
-        Ok(url) => url,
-        #[cfg(feature = "local_backend")]
-        Err(_) if cfg!(feature = "local") => {
-            return Ok(GenericClient::Local(crate::local::Client::new(url)?))
-        }
-        Err(e) => return Err(e.into()),
-    };
-    let scheme = url.scheme();
-    let backend = std::env::var("LIBSQL_CLIENT_BACKEND").unwrap_or_else(|_| {
-        match scheme {
-            "ws" | "wss" | "libsql" if cfg!(feature = "hrana_backend") => "hrana",
-            "http" | "https" => {
-                if cfg!(feature = "reqwest_backend") {
-                    "reqwest"
-                } else if cfg!(feature = "workers_backend") {
-                    "workers"
-                } else if cfg!(feature = "spin_backend") {
-                    "spin"
-                } else {
-                    "local"
-                }
-            }
-            _ => "local",
-        }
-        .to_string()
-    });
-    Ok(match backend.as_str() {
-        #[cfg(feature = "local_backend")]
-        "local" => GenericClient::Local(crate::local::Client::new(url.as_str())?),
-        #[cfg(feature = "reqwest_backend")]
-        "reqwest" => GenericClient::Reqwest(crate::reqwest::Client::from_url(url.as_str())?),
-        #[cfg(feature = "hrana_backend")]
-        "hrana" => GenericClient::Hrana(crate::hrana::Client::from_url(url).await?),
-        #[cfg(feature = "workers_backend")]
-        "workers" => anyhow::bail!("Connecting from workers API may need access to worker::RouteContext. Please call libsql_client::workers::Client::from_ctx() directly"),
-        #[cfg(feature = "spin_backend")]
-        "spin" => anyhow::bail!("Connecting from spin API may need access to specific Spin SDK secrets. Please call libsql_client::spin::Client::from_url() directly"),
-        _ => anyhow::bail!("Unknown backend: {backend}. Make sure your backend exists and is enabled with its feature flag"),
+    let auth_token = std::env::var("LIBSQL_CLIENT_TOKEN").ok();
+    new_client_from_config(Config {
+        url: url::Url::parse(&url)?,
+        auth_token,
     })
+    .await
 }
 
 // FIXME: serialize and deserialize with existing routines from sqld

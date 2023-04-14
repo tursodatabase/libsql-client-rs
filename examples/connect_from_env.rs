@@ -82,8 +82,9 @@ async fn main() {
         .await
         .unwrap_or_else(|e| format!("Error: {e}"));
     println!(
-        "Client parameters: backend={:?} url={:?}\n{response}",
+        "Client parameters: backend={:?} url={:?} token={:?}\n{response}",
         std::env::var("LIBSQL_CLIENT_BACKEND"),
-        std::env::var("LIBSQL_CLIENT_URL")
+        std::env::var("LIBSQL_CLIENT_URL"),
+        std::env::var("LIBSQL_CLIENT_TOKEN"),
     );
 }
