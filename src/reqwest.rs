@@ -24,7 +24,7 @@ impl Client {
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
         let base_url = if !url.contains("://") {
-            "https://".to_owned() + &url
+            format!("https://{}", &url)
         } else {
             url
         };
@@ -56,7 +56,7 @@ impl Client {
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
         let base_url = if !url.contains("://") {
-            "https://".to_owned() + &url
+            format!("https://{}", &url)
         } else {
             url
         };
