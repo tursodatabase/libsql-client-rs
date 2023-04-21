@@ -26,7 +26,7 @@ impl Client {
         // Auto-update the URL to start with https://.
         // It will get updated to wss via Workers API automatically
         let url = if !url.contains("://") {
-            "https://".to_owned() + &url
+            format!("https://{}", &url)
         } else if let Some(url) = url.strip_prefix("libsql://") {
             "https://".to_owned() + url
         } else if let Some(url) = url.strip_prefix("wss://") {
