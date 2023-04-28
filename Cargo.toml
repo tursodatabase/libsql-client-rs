@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.24.3"
+version = "0.24.4"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -42,8 +42,9 @@ mapping_names_to_values_in_rows = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-libsql-client = { path = ".", features = ["reqwest_backend", "local_backend"] }
+libsql-client = { path = "." }
 rand = "0.8.5"
+tracing-subscriber = "0.3.17"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -77,6 +77,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let db = new_client().await.unwrap();
     let response = bump_counter(db)
         .await

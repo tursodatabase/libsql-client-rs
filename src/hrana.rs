@@ -7,6 +7,9 @@ use crate::{BatchResult, ResultSet, Statement};
 /// Database client. This is the main structure used to
 /// communicate with the database.
 pub struct Client {
+    url: String,
+    token: Option<String>,
+
     client: hrana_client::Client,
     client_future: hrana_client::ConnFut,
     stream: hrana_client::Stream,
@@ -20,16 +23,30 @@ impl Client {
     /// * `token` - auth token
     pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Result<Self> {
         let token = token.into();
+        let token = if token.is_empty() { None } else { Some(token) };
         let url = url.into();
-        let (client, client_future) =
-            hrana_client::Client::connect(&url, if token.is_empty() { None } else { Some(token) })
-                .await?;
+
+        let (client, client_future) = hrana_client::Client::connect(&url, token.clone()).await?;
+
         let stream = client.open_stream().await?;
+
         Ok(Self {
+            url,
+            token,
             client,
             client_future,
             stream,
         })
+    }
+
+    pub async fn reconnect(&mut self) -> Result<()> {
+        let (client, client_future) =
+            hrana_client::Client::connect(&self.url, self.token.clone()).await?;
+        let stream = client.open_stream().await?;
+        self.client = client;
+        self.client_future = client_future;
+        self.stream = stream;
+        Ok(())
     }
 
     /// Creates a database client, given a `Url`
@@ -87,7 +104,6 @@ impl crate::DatabaseClient for Client {
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
         let mut batch = hrana_client::proto::Batch::new();
-
         for stmt in stmts.into_iter() {
             let stmt: Statement = stmt.into();
             let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.sql, true);
@@ -96,6 +112,7 @@ impl crate::DatabaseClient for Client {
             }
             batch.step(None, hrana_stmt);
         }
+
         self.stream
             .execute_batch(batch)
             .await

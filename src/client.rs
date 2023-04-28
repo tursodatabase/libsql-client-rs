@@ -119,6 +119,21 @@ impl DatabaseClient for GenericClient {
         }
     }
 
+    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(l) => l.execute(stmt).await,
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(r) => r.execute(stmt).await,
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.execute(stmt).await,
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(w) => w.execute(stmt).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(s) => s.execute(stmt),
+        }
+    }
+
     async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
         match self {
             #[cfg(feature = "local_backend")]
