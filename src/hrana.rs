@@ -60,7 +60,7 @@ impl Client {
     /// # use libsql_client::reqwest::Client;
     /// use url::Url;
     ///
-    /// let url = Url::parse("https://localhost:8080?jwt=<access token>").unwrap();
+    /// let url = Url::parse("https://localhost:8080?authToken=<access token>").unwrap();
     /// let db = Client::from_url(url).unwrap();
     /// ```
     pub async fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
@@ -77,8 +77,8 @@ impl Client {
             url.to_string()
         };
         let mut params = url.query_pairs();
-        // Try a jwt=XXX parameter first, continue if not found
-        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "jwt") {
+        // Try a authToken=XXX parameter first, continue if not found
+        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "authToken") {
             Client::new(url_str, token).await
         } else {
             Client::new(url_str, "").await
