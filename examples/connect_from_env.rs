@@ -35,31 +35,32 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
         ("NSW", "AU", "Sydney", -33.9500, 151.1819),
     ];
 
-    let (airport, country, city, latitude, longitude) =
-        *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
-
-    let transaction = db.transaction().await?;
-    transaction
-        .execute(Statement::with_args(
-            "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
-            // Parameters that have a single type can be passed as a regular slice
-            &[country, city],
-        ))
-        .await?;
-    transaction
-        .execute(Statement::with_args(
-            "UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?",
-            &[country, city],
-        ))
-        .await?;
-    transaction
-        .execute(Statement::with_args(
-            "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
-            // Parameters with different types can be passed to a convenience macro - args!()
-            args!(latitude, longitude, airport),
-        ))
-        .await?;
-    transaction.commit().await?;
+    for _ in 0..3 {
+        let (airport, country, city, latitude, longitude) =
+            *FAKE_LOCATIONS.choose(&mut rand::thread_rng()).unwrap();
+        let transaction = db.transaction().await?;
+        transaction
+            .execute(Statement::with_args(
+                "INSERT OR IGNORE INTO counter VALUES (?, ?, 0)",
+                // Parameters that have a single type can be passed as a regular slice
+                &[country, city],
+            ))
+            .await?;
+        transaction
+            .execute(Statement::with_args(
+                "UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?",
+                &[country, city],
+            ))
+            .await?;
+        transaction
+            .execute(Statement::with_args(
+                "INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)",
+                // Parameters with different types can be passed to a convenience macro - args!()
+                args!(latitude, longitude, airport),
+            ))
+            .await?;
+        transaction.commit().await?;
+    }
 
     /* NOTICE: interactive transactions only work with WebSocket and local backends. For HTTP, use batches:
         db.batch([

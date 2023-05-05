@@ -6,6 +6,8 @@ use anyhow::{anyhow, Result};
 
 use crate::{proto, BatchResult, Col, ResultSet, Statement, Transaction, Value};
 
+static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Trait describing capabilities of a database client:
 /// - executing statements, batches, transactions
 #[async_trait(?Send)]
@@ -79,7 +81,24 @@ pub trait DatabaseClient {
     /// The object can be later used to `execute()`, `commit()` or `rollback()`
     /// the interactive transaction.
     async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
-        Transaction::new(self).await
+        let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Transaction::new(self, id).await
+    }
+
+    async fn execute_in_transaction(
+        &self,
+        _tx_id: u64,
+        stmt: Statement,
+    ) -> Result<ResultSet> {
+        self.execute(stmt).await
+    }
+
+    async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("COMMIT").await.map(|_| ())
+    }
+
+    async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("ROLLBACK").await.map(|_| ())
     }
 }
 
@@ -98,6 +117,7 @@ pub enum GenericClient {
     #[cfg(feature = "spin_backend")]
     Spin(crate::spin::Client),
 }
+
 
 #[async_trait(?Send)]
 impl DatabaseClient for GenericClient {
@@ -135,21 +155,71 @@ impl DatabaseClient for GenericClient {
     }
 
     async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
+        let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(_) => Transaction::new(self).await,
+            Self::Local(_) => Transaction::new(self, id).await,
             #[cfg(feature = "hrana_backend")]
-            Self::Hrana(_) => Transaction::new(self).await,
+            Self::Hrana(_) => Transaction::new(self, id).await,
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(_) => {
                 anyhow::bail!("Interactive transactions are not supported with the reqwest backend. Use batch() instead.")
             }
             #[cfg(feature = "workers_backend")]
-            Self::Workers(_) => Transaction::new(self).await,
+            Self::Workers(_) => Transaction::new(self, id).await,
             #[cfg(feature = "spin_backend")]
             Self::Spin(_) => {
                 anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
             }
+        }
+    }
+
+    async fn execute_in_transaction(
+        &self,
+        tx_id: u64,
+        stmt: Statement,
+    ) -> Result<ResultSet> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(l) => l.execute_in_transaction(tx_id, stmt).await,
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(_) => unreachable!(),
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.execute_in_transaction(tx_id, stmt).await,
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(w) => w.execute_in_transaction(tx_id, stmt).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(_) => unreachable!(),
+        }
+    }
+
+    async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(l) => l.commit_transaction(tx_id).await,
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(_) => unreachable!(),
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.commit_transaction(tx_id).await,
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(w) => w.commit_transaction(tx_id).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(_) => unreachable!(),
+        }
+    }
+
+    async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(l) => l.rollback_transaction(tx_id).await,
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(_) => unreachable!(),
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.rollback_transaction(tx_id).await,
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(w) => w.rollback_transaction(tx_id).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(_) => unreachable!(),
         }
     }
 }

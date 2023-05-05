@@ -132,4 +132,23 @@ impl crate::DatabaseClient for Client {
             .map(ResultSet::from)
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
+
+    async fn execute_in_transaction(
+        &self,
+        tx_id: u64,
+        stmt: Statement,
+    ) -> Result<ResultSet> {
+        tracing::warn!("TX ID exec {tx_id} {:?}", stmt.sql);
+        self.execute(stmt).await
+    }
+
+    async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+        tracing::warn!("TX ID commit {tx_id}");
+        self.execute("COMMIT").await.map(|_| ())
+    }
+
+    async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+        tracing::warn!("TX ID commit {tx_id}");
+        self.execute("ROLLBACK").await.map(|_| ())
+    }
 }

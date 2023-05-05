@@ -4,16 +4,16 @@ use crate::{DatabaseClient, ResultSet, Statement};
 use anyhow::Result;
 
 pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {
-    client: &'a Client,
+    pub(crate) id: u64,
+    pub(crate) client: &'a Client,
 }
 
 impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
-    /// Creates a new transaction.
-    pub async fn new(client: &'a Client) -> Result<Transaction<'a, Client>> {
-        client.execute("BEGIN").await?;
-        Ok(Self { client })
+    pub async fn new(client: &'a Client, id: u64) -> Result<Transaction<'a, Client>> {
+        client.execute_in_transaction(id, Statement::from("BEGIN")).await?;
+        Ok(Self { id, client })
     }
-
+        
     /// Executes a statement within the current transaction.
     /// # Example
     ///
@@ -33,18 +33,16 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # }
     /// ```
     pub async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        self.client.execute(stmt.into()).await
+        self.client.execute_in_transaction(self.id, stmt.into()).await
     }
 
     /// Commits the transaction to the database.
     pub async fn commit(self) -> Result<()> {
-        self.client.execute("COMMIT").await?;
-        Ok(())
+        self.client.commit_transaction(self.id).await
     }
 
     /// Rolls back the transaction, cancelling any of its side-effects.
     pub async fn rollback(self) -> Result<()> {
-        self.client.execute("ROLLBACK").await?;
-        Ok(())
+        self.client.rollback_transaction(self.id).await
     }
 }
