@@ -85,11 +85,7 @@ pub trait DatabaseClient {
         Transaction::new(self, id).await
     }
 
-    async fn execute_in_transaction(
-        &self,
-        _tx_id: u64,
-        stmt: Statement,
-    ) -> Result<ResultSet> {
+    async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
         self.execute(stmt).await
     }
 
@@ -117,7 +113,6 @@ pub enum GenericClient {
     #[cfg(feature = "spin_backend")]
     Spin(crate::spin::Client),
 }
-
 
 #[async_trait(?Send)]
 impl DatabaseClient for GenericClient {
@@ -174,11 +169,7 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn execute_in_transaction(
-        &self,
-        tx_id: u64,
-        stmt: Statement,
-    ) -> Result<ResultSet> {
+    async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.execute_in_transaction(tx_id, stmt).await,

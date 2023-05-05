@@ -10,10 +10,12 @@ pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {
 
 impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     pub async fn new(client: &'a Client, id: u64) -> Result<Transaction<'a, Client>> {
-        client.execute_in_transaction(id, Statement::from("BEGIN")).await?;
+        client
+            .execute_in_transaction(id, Statement::from("BEGIN"))
+            .await?;
         Ok(Self { id, client })
     }
-        
+
     /// Executes a statement within the current transaction.
     /// # Example
     ///
@@ -33,7 +35,9 @@ impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
     ///   # }
     /// ```
     pub async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        self.client.execute_in_transaction(self.id, stmt.into()).await
+        self.client
+            .execute_in_transaction(self.id, stmt.into())
+            .await
     }
 
     /// Commits the transaction to the database.
