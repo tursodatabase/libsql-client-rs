@@ -1,6 +1,9 @@
 //! `Statement` represents an SQL statement,
 //! which can be later sent to a database.
 
+use base64::prelude::BASE64_STANDARD_NO_PAD;
+use base64::Engine;
+
 use crate::Value;
 
 /// SQL statement, possibly with bound parameters
@@ -68,7 +71,13 @@ impl std::fmt::Display for Statement {
             let params: Vec<String> = self
                 .args
                 .iter()
-                .map(|p| serde_json::json!(p)["value"].to_string())
+                .map(|p| match p {
+                    Value::Blob { value } => serde_json::json!({
+                        "base64": BASE64_STANDARD_NO_PAD.encode(value),
+                    })
+                    .to_string(),
+                    _ => serde_json::json!(p)["value"].to_string(),
+                })
                 .collect();
             write!(
                 f,
