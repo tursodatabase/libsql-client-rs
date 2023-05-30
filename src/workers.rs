@@ -270,9 +270,9 @@ impl Client {
                 for param in stmt.args {
                     hrana_stmt.bind(param);
                 }
-        
+
                 let mut event_stream = ws.socket.events()?;
-        
+
                 ws.send_request(proto::Request::Execute(proto::ExecuteReq {
                     stream_id: 0,
                     stmt: hrana_stmt,
@@ -288,7 +288,7 @@ impl Client {
                     } => Err(Error::RustError(format!("{error}"))),
                     _ => Err(Error::RustError("unexpected response".to_string())),
                 }
-            },
+            }
             ClientInner::Http(_) => {
                 let results = self.raw_batch(std::iter::once(stmt)).await?;
                 match (results.step_results.first(), results.step_errors.first()) {

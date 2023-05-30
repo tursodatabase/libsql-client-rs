@@ -1,6 +1,6 @@
 //! `Client` is the main structure to interact with the database.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
 
@@ -354,24 +354,9 @@ pub(crate) fn parse_value(
         },
         serde_json::Value::String(v) => Ok(Value::Text{value: v}),
         serde_json::Value::Object(v) => {
-            let Some(base64_field) = v.get("base64") else {
-                return Err(anyhow!(
-                    "Result {result_idx} row {row_idx} cell {cell_idx} had unknown object, expected base64 field",
-                ))
-            };
-
-            let Some(base64_string) = base64_field.as_str() else {
-                return Err(anyhow!(
-                    "Result {result_idx} row {row_idx} cell {cell_idx} had empty base64 field: {base64_field}",
-                ))
-            };
-
-            let Ok(decoded) = BASE64_STANDARD_NO_PAD.decode(base64_string) else {
-                return Err(anyhow!(
-                    "Result {result_idx} row {row_idx} cell {cell_idx} had invalid base64 string: {base64_string}",
-                ))
-            };
-
+            let base64_field = v.get("base64").with_context(|| format!("Result {result_idx} row {row_idx} cell {cell_idx} had unknown object, expected base64 field"))?;
+            let base64_string = base64_field.as_str().with_context(|| format!("Result {result_idx} row {row_idx} cell {cell_idx} had empty base64 field: {base64_field}"))?;
+            let decoded = BASE64_STANDARD_NO_PAD.decode(base64_string)?;
             Ok(Value::Blob{value: decoded})
         },
         _ => Err(anyhow!(
