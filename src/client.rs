@@ -181,7 +181,7 @@ pub struct Config {
 ///
 /// ```
 /// # async fn f() {
-/// # use libsql_client::{DatabaseClient, Config};
+/// # use libsql_client::Config;
 /// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
 /// let db = libsql_client::new_client_from_config(config).await.unwrap();
 /// # }
@@ -237,7 +237,7 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client
 ///
 /// ```
 /// # async fn run() {
-/// # use libsql_client::{DatabaseClient, Config};
+/// # use libsql_client::Config;
 /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
 /// let db = libsql_client::new_client().await.unwrap();
 /// # }

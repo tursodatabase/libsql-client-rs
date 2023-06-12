@@ -91,7 +91,7 @@ pub mod hrana;
 ///
 /// ```rust,no_run
 ///   # async fn f() -> anyhow::Result<()> {
-///   # use crate::libsql_client::{DatabaseClient, Statement, args};
+///   # use crate::libsql_client::{Statement, args};
 ///   let db = libsql_client::new_client().await?;
 ///   db.execute(
 ///       Statement::with_args("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",

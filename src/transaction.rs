@@ -21,7 +21,7 @@ impl<'a> Transaction<'a> {
     ///
     /// ```rust,no_run
     ///   # async fn f() -> anyhow::Result<()> {
-    ///   # use crate::libsql_client::{DatabaseClient, Statement, args};
+    ///   # use crate::libsql_client::{Statement, args};
     ///   let mut db = libsql_client::new_client().await?;
     ///   let tx = db.transaction().await?;
     ///   tx.execute(Statement::with_args("INSERT INTO users (name) VALUES (?)", args!["John"])).await?;
