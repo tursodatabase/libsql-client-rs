@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{args, DatabaseClient, ResultSet, Statement};
+use libsql_client::{args, Client, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -19,7 +19,7 @@ fn result_to_string(query_result: ResultSet) -> Result<String> {
 }
 
 // Bumps a counter for one of the geographic locations picked at random.
-async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
+async fn bump_counter(db: Client) -> Result<String> {
     // Recreate the tables if they do not exist yet
     db.batch([
         "CREATE TABLE IF NOT EXISTS counter(country TEXT, city TEXT, value, PRIMARY KEY(country, city)) WITHOUT ROWID",
@@ -64,7 +64,7 @@ async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
 async fn main() {
     match libsql_client::reqwest::Client::from_env() {
         Ok(remote_db) => {
-            match bump_counter(remote_db).await {
+            match bump_counter(Client::Reqwest(remote_db)).await {
                 Ok(response) => println!("Remote:\n{response}"),
                 Err(e) => println!("Remote database query failed: {e}"),
             };
@@ -75,7 +75,7 @@ async fn main() {
     let mut path_buf = std::env::temp_dir();
     path_buf.push("libsql_client_test_db.db");
     let local_db = libsql_client::local::Client::new(path_buf.as_path()).unwrap();
-    match bump_counter(local_db).await {
+    match bump_counter(Client::Local(local_db)).await {
         Ok(response) => println!("Local:\n{response}"),
         Err(e) => println!("Local database query failed: {e}"),
     };

@@ -1,40 +1,48 @@
 //! `Client` is the main structure to interact with the database.
 
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
 
 use crate::{proto, BatchResult, Col, ResultSet, Statement, Transaction, Value};
 
 static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Trait describing capabilities of a database client:
-/// - executing statements, batches, transactions
-#[async_trait(?Send)]
-pub trait DatabaseClient {
-    /// Executes a single SQL statement
-    ///
-    /// # Arguments
-    /// * `stmt` - the SQL statement
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        let results = self.raw_batch(std::iter::once(stmt)).await?;
-        match (results.step_results.first(), results.step_errors.first()) {
-            (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
-            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
-            _ => unreachable!(),
+/// A generic client struct, wrapping possible backends.
+/// It's a convenience struct which allows implementing connect()
+/// with backends being passed as env parameters.
+pub enum Client {
+    #[cfg(feature = "local_backend")]
+    Local(crate::local::Client),
+    #[cfg(feature = "reqwest_backend")]
+    Reqwest(crate::reqwest::Client),
+    #[cfg(feature = "hrana_backend")]
+    Hrana(crate::hrana::Client),
+    #[cfg(feature = "workers_backend")]
+    Workers(crate::workers::Client),
+    #[cfg(feature = "spin_backend")]
+    Spin(crate::spin::Client),
+}
+
+unsafe impl Send for Client {}
+
+impl Client {
+    pub async fn raw_batch(
+        &self,
+        stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
+    ) -> Result<BatchResult> {
+        match self {
+            #[cfg(feature = "local_backend")]
+            Self::Local(l) => l.raw_batch(stmts),
+            #[cfg(feature = "reqwest_backend")]
+            Self::Reqwest(r) => r.raw_batch(stmts).await,
+            #[cfg(feature = "hrana_backend")]
+            Self::Hrana(h) => h.raw_batch(stmts).await,
+            #[cfg(feature = "workers_backend")]
+            Self::Workers(w) => w.raw_batch(stmts).await,
+            #[cfg(feature = "spin_backend")]
+            Self::Spin(s) => s.raw_batch(stmts),
         }
     }
-
-    /// Executes a batch of SQL statements.
-    /// Each statement is going to run in its own transaction,
-    /// unless they're wrapped in BEGIN and END
-    ///
-    /// # Arguments
-    /// * `stmts` - SQL statements
-    async fn raw_batch(
-        &self,
-        stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<BatchResult>;
 
     /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
     /// Each statement is going to run in its own transaction,
@@ -42,10 +50,13 @@ pub trait DatabaseClient {
     ///
     /// # Arguments
     /// * `stmts` - SQL statements
-    async fn batch(
+    pub async fn batch<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
         &self,
-        stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<Vec<ResultSet>> {
+        stmts: I,
+    ) -> Result<Vec<ResultSet>>
+    where
+        <I as IntoIterator>::IntoIter: Send,
+    {
         let batch_results = self
             .raw_batch(
                 std::iter::once(Statement::new("BEGIN"))
@@ -77,67 +88,10 @@ pub trait DatabaseClient {
         step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
     }
 
-    /// Starts an interactive transaction and returns a `Transaction` object.
-    /// The object can be later used to `execute()`, `commit()` or `rollback()`
-    /// the interactive transaction.
-    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
-        let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Transaction::new(self, id).await
-    }
-
-    async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
-        self.execute(stmt).await
-    }
-
-    async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("COMMIT").await.map(|_| ())
-    }
-
-    async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("ROLLBACK").await.map(|_| ())
-    }
-}
-
-/// A generic client struct, wrapping possible backends.
-/// It's a convenience struct which allows implementing connect()
-/// with backends being passed as env parameters.
-pub enum GenericClient {
-    #[cfg(feature = "local_backend")]
-    Local(crate::local::Client),
-    #[cfg(feature = "reqwest_backend")]
-    Reqwest(crate::reqwest::Client),
-    #[cfg(feature = "hrana_backend")]
-    Hrana(crate::hrana::Client),
-    #[cfg(feature = "workers_backend")]
-    Workers(crate::workers::Client),
-    #[cfg(feature = "spin_backend")]
-    Spin(crate::spin::Client),
-}
-
-#[async_trait(?Send)]
-impl DatabaseClient for GenericClient {
-    async fn raw_batch(
-        &self,
-        stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<BatchResult> {
+    pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.raw_batch(stmts).await,
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.raw_batch(stmts).await,
-            #[cfg(feature = "hrana_backend")]
-            Self::Hrana(h) => h.raw_batch(stmts).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.raw_batch(stmts).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(s) => s.raw_batch(stmts),
-        }
-    }
-
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        match self {
-            #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute(stmt).await,
+            Self::Local(l) => l.execute(stmt),
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(r) => r.execute(stmt).await,
             #[cfg(feature = "hrana_backend")]
@@ -149,7 +103,7 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
+    pub async fn transaction(&self) -> Result<Transaction> {
         let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         match self {
             #[cfg(feature = "local_backend")]
@@ -169,10 +123,10 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+    pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute_in_transaction(tx_id, stmt).await,
+            Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(_) => unreachable!(),
             #[cfg(feature = "hrana_backend")]
@@ -184,10 +138,10 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+    pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.commit_transaction(tx_id).await,
+            Self::Local(l) => l.commit_transaction(tx_id),
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(_) => unreachable!(),
             #[cfg(feature = "hrana_backend")]
@@ -199,10 +153,10 @@ impl DatabaseClient for GenericClient {
         }
     }
 
-    async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+    pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.rollback_transaction(tx_id).await,
+            Self::Local(l) => l.rollback_transaction(tx_id),
             #[cfg(feature = "reqwest_backend")]
             Self::Reqwest(_) => unreachable!(),
             #[cfg(feature = "hrana_backend")]
@@ -232,16 +186,16 @@ pub struct Config {
 /// let db = libsql_client::new_client_from_config(config).await.unwrap();
 /// # }
 /// ```
-pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<GenericClient> {
+pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client> {
     let scheme = config.url.scheme();
     Ok(match scheme {
         #[cfg(feature = "local_backend")]
         "file" => {
-            GenericClient::Local(crate::local::Client::new(config.url.to_string())?)
+            Client::Local(crate::local::Client::new(config.url.to_string())?)
         },
         #[cfg(feature = "hrana_backend")]
         "ws" | "wss" => {
-            GenericClient::Hrana(crate::hrana::Client::from_config(config).await?)
+            Client::Hrana(crate::hrana::Client::from_config(config).await?)
         },
         #[cfg(feature = "hrana_backend")]
         "libsql" => {
@@ -253,19 +207,19 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Generi
             } else {
                 config.url
             };
-            GenericClient::Hrana(crate::hrana::Client::from_config(config).await?)
+            Client::Hrana(crate::hrana::Client::from_config(config).await?)
         }
         #[cfg(feature = "reqwest_backend")]
         "http" | "https" => {
-            GenericClient::Reqwest(crate::reqwest::Client::from_config(config)?)
+            Client::Reqwest(crate::reqwest::Client::from_config(config)?)
         },
         #[cfg(feature = "workers_backend")]
         "workers" => {
-            GenericClient::Workers(crate::workers::Client::from_config(config).await.map_err(|e| anyhow::anyhow!("{}", e))?)
+            Client::Workers(crate::workers::Client::from_config(config).await.map_err(|e| anyhow::anyhow!("{}", e))?)
         },
         #[cfg(feature = "spin_backend")]
         "spin" => {
-            GenericClient::Spin(crate::spin::Client::from_config(config))
+            Client::Spin(crate::spin::Client::from_config(config))
         },
         _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
     })
@@ -288,7 +242,7 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Generi
 /// let db = libsql_client::new_client().await.unwrap();
 /// # }
 /// ```
-pub async fn new_client() -> anyhow::Result<GenericClient> {
+pub async fn new_client() -> anyhow::Result<Client> {
     let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
         anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
     })?;

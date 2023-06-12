@@ -1,7 +1,6 @@
 use crate::client::Config;
 use crate::proto;
 use anyhow::Context;
-use async_trait::async_trait;
 use worker::*;
 
 use crate::{BatchResult, ResultSet, Statement};
@@ -199,7 +198,7 @@ impl Client {
         .await
     }
 
-    async fn raw_batch(
+    async fn raw_batch_internal(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<BatchResult> {
@@ -262,7 +261,7 @@ impl Client {
         }
     }
 
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+    async fn execute_internal(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         match &self.inner {
             ClientInner::WebSocket(ws) => {
                 let stmt: Statement = stmt.into();
@@ -290,7 +289,7 @@ impl Client {
                 }
             }
             ClientInner::Http(_) => {
-                let results = self.raw_batch(std::iter::once(stmt)).await?;
+                let results = self.raw_batch_internal(std::iter::once(stmt)).await?;
                 match (results.step_results.first(), results.step_errors.first()) {
                     (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
                     (Some(None), Some(Some(err))) => Err(Error::RustError(err.message.clone())),
@@ -301,18 +300,35 @@ impl Client {
     }
 }
 
-#[async_trait(?Send)]
-impl crate::DatabaseClient for Client {
-    async fn raw_batch(
+impl Client {
+    pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
-        self.raw_batch(stmts)
+        self.raw_batch_internal(stmts)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    async fn execute(&self, stmt: impl Into<Statement>) -> anyhow::Result<ResultSet> {
-        self.execute(stmt).await.map_err(|e| anyhow::anyhow!("{e}"))
+    pub async fn execute(&self, stmt: impl Into<Statement>) -> anyhow::Result<ResultSet> {
+        self.execute_internal(stmt)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    pub async fn execute_in_transaction(
+        &self,
+        _tx_id: u64,
+        stmt: Statement,
+    ) -> anyhow::Result<ResultSet> {
+        self.execute(stmt).await
+    }
+
+    pub async fn commit_transaction(&self, _tx_id: u64) -> anyhow::Result<()> {
+        self.execute("COMMIT").await.map(|_| ())
+    }
+
+    pub async fn rollback_transaction(&self, _tx_id: u64) -> anyhow::Result<()> {
+        self.execute("ROLLBACK").await.map(|_| ())
     }
 }

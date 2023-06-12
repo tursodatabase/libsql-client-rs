@@ -1,6 +1,5 @@
 use crate::client::Config;
 use anyhow::Result;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -133,9 +132,8 @@ impl Client {
     }
 }
 
-#[async_trait(?Send)]
-impl crate::DatabaseClient for Client {
-    async fn raw_batch(
+impl Client {
+    pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
@@ -156,7 +154,7 @@ impl crate::DatabaseClient for Client {
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+    pub async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let stmt = Self::into_hrana(stmt.into());
 
         let stream = self.client.open_stream().await?;
@@ -167,7 +165,7 @@ impl crate::DatabaseClient for Client {
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+    pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
         let stmt = Self::into_hrana(stmt);
         tracing::trace!("Transaction {tx_id} executing {}", stmt.sql);
         let stream = self.stream_for_transaction(tx_id).await?;
@@ -178,7 +176,7 @@ impl crate::DatabaseClient for Client {
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+    pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         tracing::trace!("Transaction {tx_id} commit");
         let stream = self.stream_for_transaction(tx_id).await?;
         self.drop_stream_for_transaction(tx_id);
@@ -189,7 +187,7 @@ impl crate::DatabaseClient for Client {
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+    pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         tracing::trace!("Transaction {tx_id} rollback");
         let stream = self.stream_for_transaction(tx_id).await?;
         self.drop_stream_for_transaction(tx_id);

@@ -1,15 +1,15 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
-use crate::{DatabaseClient, ResultSet, Statement};
+use crate::{Client, ResultSet, Statement};
 use anyhow::Result;
 
-pub struct Transaction<'a, Client: DatabaseClient + ?Sized> {
+pub struct Transaction<'a> {
     pub(crate) id: u64,
     pub(crate) client: &'a Client,
 }
 
-impl<'a, Client: DatabaseClient + ?Sized> Transaction<'a, Client> {
-    pub async fn new(client: &'a Client, id: u64) -> Result<Transaction<'a, Client>> {
+impl<'a> Transaction<'a> {
+    pub async fn new(client: &'a Client, id: u64) -> Result<Transaction<'a>> {
         client
             .execute_in_transaction(id, Statement::from("BEGIN"))
             .await?;

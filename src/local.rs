@@ -1,5 +1,6 @@
-use crate::{proto, proto::StmtResult, BatchResult, Col, Statement, Value};
-use async_trait::async_trait;
+use crate::{proto, proto::StmtResult, BatchResult, Col, ResultSet, Statement, Value};
+use anyhow::Result;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::types::Value as RusqliteValue;
 
@@ -7,7 +8,7 @@ use rusqlite::types::Value as RusqliteValue;
 /// communicate with the database.
 #[derive(Debug)]
 pub struct Client {
-    inner: rusqlite::Connection,
+    inner: Arc<Mutex<rusqlite::Connection>>,
 }
 
 struct ValueWrapper(Value);
@@ -43,14 +44,18 @@ impl Client {
     /// * `path` - path of the local database
     pub fn new(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         Ok(Self {
-            inner: rusqlite::Connection::open(path).map_err(|e| anyhow::anyhow!("{e}"))?,
+            inner: Arc::new(Mutex::new(
+                rusqlite::Connection::open(path).map_err(|e| anyhow::anyhow!("{e}"))?,
+            )),
         })
     }
 
     /// Establishes a new in-memory database and connects to it.
     pub fn in_memory() -> anyhow::Result<Self> {
         Ok(Self {
-            inner: rusqlite::Connection::open(":memory:").map_err(|e| anyhow::anyhow!("{e}"))?,
+            inner: Arc::new(Mutex::new(
+                rusqlite::Connection::open(":memory:").map_err(|e| anyhow::anyhow!("{e}"))?,
+            )),
         })
     }
 
@@ -75,14 +80,13 @@ impl Client {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() {
+    /// # fn f() {
     /// let db = libsql_client::local::Client::new("/tmp/example321.db").unwrap();
     /// let result = db
-    ///     .raw_batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"])
-    ///     .await;
+    ///     .raw_batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"]);
     /// # }
     /// ```
-    pub async fn raw_batch(
+    pub fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
@@ -97,7 +101,8 @@ impl Client {
                     .map(ValueWrapper)
                     .map(RusqliteValue::from),
             );
-            let mut stmt = self.inner.prepare(sql_string)?;
+            let inner = self.inner.lock().unwrap();
+            let mut stmt = inner.prepare(sql_string)?;
             let cols: Vec<Col> = stmt
                 .columns()
                 .into_iter()
@@ -137,14 +142,66 @@ impl Client {
             step_errors,
         })
     }
-}
 
-#[async_trait(?Send)]
-impl crate::DatabaseClient for Client {
-    async fn raw_batch(
+    /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
+    /// Each statement is going to run in its own transaction,
+    /// unless they're wrapped in BEGIN and END
+    ///
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    pub fn batch(
         &self,
-        stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
-        self.raw_batch(stmts).await
+        stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
+    ) -> Result<Vec<ResultSet>> {
+        let batch_results = self.raw_batch(
+            std::iter::once(Statement::new("BEGIN"))
+                .chain(stmts.into_iter().map(|s| s.into()))
+                .chain(std::iter::once(Statement::new("END"))),
+        )?;
+        let step_error: Option<proto::Error> = batch_results
+            .step_errors
+            .into_iter()
+            .skip(1)
+            .find(|e| e.is_some())
+            .flatten();
+        if let Some(error) = step_error {
+            return Err(anyhow::anyhow!(error.message));
+        }
+        let mut step_results: Vec<Result<ResultSet>> = batch_results
+            .step_results
+            .into_iter()
+            .skip(1) // BEGIN is not counted in the result, it's implicitly ignored
+            .map(|maybe_rs| {
+                maybe_rs
+                    .map(ResultSet::from)
+                    .ok_or_else(|| anyhow::anyhow!("Unexpected missing result set"))
+            })
+            .collect();
+        step_results.pop(); // END is not counted in the result, it's implicitly ignored
+                            // Collect all the results into a single Result
+        step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
+    }
+
+    /// # Arguments
+    /// * `stmt` - the SQL statement
+    pub fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        let results = self.raw_batch(std::iter::once(stmt))?;
+        match (results.step_results.first(), results.step_errors.first()) {
+            (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
+            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        self.execute(stmt)
+    }
+
+    pub fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("COMMIT").map(|_| ())
+    }
+
+    pub fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("ROLLBACK").map(|_| ())
     }
 }

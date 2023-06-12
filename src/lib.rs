@@ -64,7 +64,7 @@ impl std::convert::From<proto::StmtResult> for ResultSet {
 }
 
 pub mod client;
-pub use client::{new_client, new_client_from_config, Config, DatabaseClient};
+pub use client::{new_client, new_client_from_config, Client, Config};
 
 pub mod transaction;
 pub use transaction::Transaction;

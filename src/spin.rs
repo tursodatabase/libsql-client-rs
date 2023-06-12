@@ -150,23 +150,6 @@ impl Client {
     }
 }
 
-/* FIXME: the code below provides async API. Spin does not support async Rust yet,
-**        so let's cook a sync API instead
-#[async_trait(?Send)]
-impl crate::DatabaseClient for Client {
-    async fn raw_batch(
-        &self,
-        stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> Result<BatchResult> {
-        self.raw_batch(stmts).map_err(|e| anyhow!("{e}"))
-    }
-
-    async fn transaction<'a>(&'a self) -> Result<Transaction<'a, Self>> {
-        anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
-    }
-}
-*/
-
 impl Client {
     /// Executes a single SQL statement.
     pub fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {

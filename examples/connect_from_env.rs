@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{args, new_client, DatabaseClient, ResultSet, Statement};
+use libsql_client::{args, new_client, Client, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -19,7 +19,7 @@ fn result_to_string(query_result: ResultSet) -> Result<String> {
 }
 
 // Bumps a counter for one of the geographic locations picked at random.
-async fn bump_counter(db: impl DatabaseClient) -> Result<String> {
+async fn bump_counter(db: Client) -> Result<String> {
     // Recreate the tables if they do not exist yet
     db.batch([
         "CREATE TABLE IF NOT EXISTS counter(country TEXT, city TEXT, value, PRIMARY KEY(country, city)) WITHOUT ROWID",

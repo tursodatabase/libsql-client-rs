@@ -1,8 +1,8 @@
 use crate::client::Config;
-use async_trait::async_trait;
+use anyhow::Result;
 use base64::Engine;
 
-use crate::{BatchResult, Statement, Transaction};
+use crate::{BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -138,9 +138,8 @@ impl Client {
     }
 }
 
-#[async_trait(?Send)]
-impl crate::DatabaseClient for Client {
-    async fn raw_batch(
+impl Client {
+    pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
@@ -176,7 +175,26 @@ impl crate::DatabaseClient for Client {
         crate::client::http_json_to_batch_result(response_json, stmts_count)
     }
 
-    async fn transaction<'a>(&'a self) -> anyhow::Result<Transaction<'a, Self>> {
-        anyhow::bail!("Interactive transactions are only supported by WebSocket (hrana) and local backends. Use batch() instead")
+    /// # Arguments
+    /// * `stmt` - the SQL statement
+    pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        let results = self.raw_batch(std::iter::once(stmt)).await?;
+        match (results.step_results.first(), results.step_errors.first()) {
+            (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
+            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
+            _ => unreachable!(),
+        }
+    }
+
+    pub async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        self.execute(stmt).await
+    }
+
+    pub async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("COMMIT").await.map(|_| ())
+    }
+
+    pub async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("ROLLBACK").await.map(|_| ())
     }
 }
