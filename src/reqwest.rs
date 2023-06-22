@@ -1,14 +1,17 @@
 use crate::client::Config;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use base64::Engine;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
-use crate::{BatchResult, ResultSet, Statement};
+use crate::{proto::pipeline, BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
 #[derive(Clone, Debug)]
 pub struct Client {
-    base_url: String,
+    inner: reqwest::Client,
+    batons: Arc<RwLock<HashMap<u64, String>>>,
     url_for_queries: String,
     auth: String,
 }
@@ -28,13 +31,10 @@ impl Client {
         } else {
             url
         };
-        let url_for_queries = if cfg!(feature = "separate_url_for_queries") {
-            format!("{base_url}/queries")
-        } else {
-            base_url.clone()
-        };
+        let url_for_queries = format!("{base_url}v2/pipeline");
         Self {
-            base_url,
+            inner: reqwest::Client::new(),
+            batons: Arc::new(RwLock::new(HashMap::new())),
             url_for_queries,
             auth: format!("Bearer {token}"),
         }
@@ -60,13 +60,10 @@ impl Client {
         } else {
             url
         };
-        let url_for_queries = if cfg!(feature = "separate_url_for_queries") {
-            format!("{base_url}/queries")
-        } else {
-            base_url.clone()
-        };
+        let url_for_queries = format!("{base_url}v2/pipeline");
         Self {
-            base_url,
+            inner: reqwest::Client::new(),
+            batons: Arc::new(RwLock::new(HashMap::new())),
             url_for_queries,
             auth: format!(
                 "Basic {}",
@@ -139,62 +136,173 @@ impl Client {
 }
 
 impl Client {
+    fn into_hrana(stmt: Statement) -> hrana_client::proto::Stmt {
+        let mut hrana_stmt = hrana_client::proto::Stmt::new(stmt.sql, true);
+        for param in stmt.args {
+            hrana_stmt.bind(param);
+        }
+        hrana_stmt
+    }
+
     pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> anyhow::Result<BatchResult> {
-        let (body, stmts_count) = crate::client::statements_to_string(stmts);
-        let client = reqwest::Client::new();
-        let response = match client
+        let mut batch = hrana_client::proto::Batch::new();
+        for stmt in stmts.into_iter() {
+            batch.step(None, Self::into_hrana(stmt.into()));
+        }
+
+        let msg = pipeline::ClientMsg {
+            baton: None,
+            requests: vec![
+                pipeline::StreamRequest::Batch(pipeline::StreamBatchReq { batch }),
+                pipeline::StreamRequest::Close,
+            ],
+        };
+        let body = serde_json::to_string(&msg)?;
+
+        let response = self
+            .inner
             .post(&self.url_for_queries)
             .body(body.clone())
             .header("Authorization", &self.auth)
             .send()
-            .await
-        {
-            Ok(resp) if resp.status() == reqwest::StatusCode::OK => resp,
-            // Retry with the legacy route: "/"
-            resp => {
-                if cfg!(feature = "separate_url_for_queries") {
-                    client
-                        .post(&self.base_url)
-                        .body(body)
-                        .header("Authorization", &self.auth)
-                        .send()
-                        .await?
-                } else {
-                    anyhow::bail!("{}", resp?.status());
-                }
-            }
-        };
+            .await?;
         if response.status() != reqwest::StatusCode::OK {
             anyhow::bail!("{}", response.status());
         }
         let resp: String = response.text().await?;
-        let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-        crate::client::http_json_to_batch_result(response_json, stmts_count)
+        let mut response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+
+        if response.results.is_empty() {
+            anyhow::bail!(
+                "Unexpected empty response from server: {:?}",
+                response.results
+            );
+        }
+        if response.results.len() > 2 {
+            // One with actual results, one closing the stream
+            anyhow::bail!(
+                "Unexpected multiple responses from server: {:?}",
+                response.results
+            );
+        }
+        match response.results.swap_remove(0) {
+            pipeline::Response::Ok(pipeline::StreamResponseOk {
+                response: pipeline::StreamResponse::Batch(batch_result),
+            }) => Ok(batch_result.result),
+            pipeline::Response::Ok(_) => {
+                anyhow::bail!("Unexpected response from server: {:?}", response.results)
+            }
+            pipeline::Response::Error(e) => {
+                anyhow::bail!("Error from server: {:?}", e)
+            }
+        }
+    }
+
+    async fn execute_inner(
+        &self,
+        stmt: impl Into<Statement> + Send,
+        tx_id: u64,
+    ) -> Result<ResultSet> {
+        let stmt = Self::into_hrana(stmt.into());
+
+        let baton = if tx_id > 0 {
+            self.batons.read().unwrap().get(&tx_id).cloned()
+        } else {
+            None
+        };
+        let msg = pipeline::ClientMsg {
+            baton,
+            requests: vec![pipeline::StreamRequest::Execute(
+                pipeline::StreamExecuteReq { stmt },
+            )],
+        };
+        let body = serde_json::to_string(&msg)?;
+
+        let response = self
+            .inner
+            .post(&self.url_for_queries)
+            .body(body)
+            .header("Authorization", &self.auth)
+            .send()
+            .await?;
+        if response.status() != reqwest::StatusCode::OK {
+            anyhow::bail!("{}", response.status());
+        }
+        let resp: String = response.text().await?;
+        let mut response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+
+        if tx_id > 0 {
+            match response.baton {
+                Some(baton) => {
+                    self.batons.write().unwrap().insert(tx_id, baton);
+                }
+                None => anyhow::bail!("Stream closed: server returned empty baton"),
+            }
+        }
+
+        if response.results.is_empty() {
+            anyhow::bail!(
+                "Unexpected empty response from server: {:?}",
+                response.results
+            );
+        }
+        if response.results.len() > 1 {
+            anyhow::bail!(
+                "Unexpected multiple responses from server: {:?}",
+                response.results
+            );
+        }
+        match response.results.swap_remove(0) {
+            pipeline::Response::Ok(pipeline::StreamResponseOk {
+                response: pipeline::StreamResponse::Execute(execute_result),
+            }) => Ok(ResultSet::from(execute_result.result)),
+            pipeline::Response::Ok(_) => {
+                anyhow::bail!("Unexpected response from server: {:?}", response.results)
+            }
+            pipeline::Response::Error(e) => {
+                anyhow::bail!("Error from server: {:?}", e)
+            }
+        }
+    }
+
+    async fn close_stream_for(&self, tx_id: u64) -> Result<()> {
+        let msg = pipeline::ClientMsg {
+            baton: self.batons.read().unwrap().get(&tx_id).cloned(),
+            requests: vec![pipeline::StreamRequest::Close],
+        };
+        self.inner
+            .post(&self.url_for_queries)
+            .body(serde_json::to_string(&msg)?)
+            .header("Authorization", &self.auth)
+            .send()
+            .await
+            .context("Failed to close stream")?;
+        self.batons.write().unwrap().remove(&tx_id);
+        Ok(())
     }
 
     /// # Arguments
     /// * `stmt` - the SQL statement
     pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
-        let results = self.raw_batch(std::iter::once(stmt)).await?;
-        match (results.step_results.first(), results.step_errors.first()) {
-            (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
-            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
-            _ => unreachable!(),
-        }
+        self.execute_inner(stmt, 0).await
     }
 
-    pub async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
-        self.execute(stmt).await
+    pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        self.execute_inner(stmt, tx_id).await
     }
 
-    pub async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("COMMIT").await.map(|_| ())
+    pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+        self.execute_inner("COMMIT", tx_id).await.map(|_| ())?;
+        self.close_stream_for(tx_id).await.ok();
+        Ok(())
     }
 
-    pub async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("ROLLBACK").await.map(|_| ())
+    pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+        self.execute_inner("ROLLBACK", tx_id).await.map(|_| ())?;
+        self.close_stream_for(tx_id).await.ok();
+        Ok(())
     }
 }

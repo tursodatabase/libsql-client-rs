@@ -62,14 +62,6 @@ async fn bump_counter(db: Client) -> Result<String> {
         transaction.commit().await?;
     }
 
-    /* NOTICE: interactive transactions only work with WebSocket and local backends. For HTTP, use batches:
-        db.batch([
-            Statement::with_args("INSERT OR IGNORE INTO counter VALUES (?, ?, 0)", &[country, city]),
-            Statement::with_args("UPDATE counter SET value = value + 1 WHERE country = ? AND city = ?", &[country, city]),
-            Statement::with_args("INSERT OR IGNORE INTO coordinates VALUES (?, ?, ?)", args!(latitude, longitude, airport)),
-        ]).await?;
-    */
-
     let counter_response = db.execute("SELECT * FROM counter").await?;
     let scoreboard = result_to_string(counter_response)?;
     let html = format!("Scoreboard:\n{scoreboard}");
@@ -84,8 +76,7 @@ async fn main() {
         .await
         .unwrap_or_else(|e| format!("Error: {e}"));
     println!(
-        "Client parameters: backend={:?} url={:?} token={:?}\n{response}",
-        std::env::var("LIBSQL_CLIENT_BACKEND"),
+        "Client parameters: url={:?} token={:?}\n{response}",
         std::env::var("LIBSQL_CLIENT_URL"),
         std::env::var("LIBSQL_CLIENT_TOKEN"),
     );
