@@ -17,6 +17,15 @@ pub struct Client {
     streams_for_transactions: RwLock<HashMap<u64, Arc<hrana_client::Stream>>>,
 }
 
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("url", &self.url)
+            .field("token", &self.token)
+            .finish()
+    }
+}
+
 impl Client {
     /// Creates a database client with JWT authentication.
     ///

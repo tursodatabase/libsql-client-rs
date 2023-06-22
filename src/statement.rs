@@ -65,26 +65,22 @@ impl From<&&str> for Statement {
 
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.args.is_empty() {
-            write!(f, "{}", serde_json::json!(self.sql))
-        } else {
-            let params: Vec<String> = self
-                .args
-                .iter()
-                .map(|p| match p {
-                    Value::Blob { value } => serde_json::json!({
-                        "base64": BASE64_STANDARD_NO_PAD.encode(value),
-                    })
-                    .to_string(),
-                    _ => serde_json::json!(p)["value"].to_string(),
+        let params: Vec<String> = self
+            .args
+            .iter()
+            .map(|p| match p {
+                Value::Blob { value } => serde_json::json!({
+                    "base64": BASE64_STANDARD_NO_PAD.encode(value),
                 })
-                .collect();
-            write!(
-                f,
-                "{{\"q\": {}, \"params\": [{}]}}",
-                serde_json::json!(self.sql),
-                params.join(",")
-            )
-        }
+                .to_string(),
+                _ => serde_json::json!(p)["value"].to_string(),
+            })
+            .collect();
+        write!(
+            f,
+            "{{\"sql\": {}, \"args\": [{}]}}",
+            serde_json::json!(self.sql),
+            params.join(",")
+        )
     }
 }

@@ -1,68 +1,17 @@
 use crate::client::Config;
-use crate::proto;
-use anyhow::Context;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use worker::*;
 
-use crate::{BatchResult, ResultSet, Statement};
-
-#[derive(Debug)]
-pub struct WebSocketClient {
-    socket: WebSocket,
-    next_reqid: std::sync::atomic::AtomicI32,
-}
-
-#[derive(Debug)]
-pub struct HttpClient {
-    url: String,
-    auth: String,
-}
-
-#[derive(Debug)]
-pub enum ClientInner {
-    WebSocket(WebSocketClient),
-    Http(HttpClient),
-}
-
-impl WebSocketClient {
-    fn send_request(&self, request: proto::Request) -> Result<()> {
-        // NOTICE: we effective allow concurrency of 1 here, until we implement
-        // id allocation andfMe request tracking
-        let request_id = self
-            .next_reqid
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let msg = proto::ClientMsg::Request {
-            request_id,
-            request,
-        };
-
-        self.socket.send(&msg)
-    }
-
-    async fn recv_response(event_stream: &mut EventStream<'_>) -> Result<proto::ServerMsg> {
-        use futures_util::StreamExt;
-
-        // NOTICE: we're effectively synchronously waiting for the response here
-        if let Some(event) = event_stream.next().await {
-            match event? {
-                WebsocketEvent::Message(msg) => {
-                    let stmt_result: proto::ServerMsg = msg.json::<proto::ServerMsg>()?;
-                    Ok(stmt_result)
-                }
-                WebsocketEvent::Close(msg) => {
-                    Err(Error::RustError(format!("connection closed: {msg:?}")))
-                }
-            }
-        } else {
-            Err(Error::RustError("no response".to_string()))
-        }
-    }
-}
+use crate::{proto::pipeline, BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Client {
-    pub inner: ClientInner,
+    batons: Arc<RwLock<HashMap<u64, String>>>,
+    url_for_queries: String,
+    auth: String,
 }
 
 impl Client {
@@ -71,84 +20,26 @@ impl Client {
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Result<Self> {
+    pub fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
-        // Auto-update the URL to start with https://.
-        // It will get updated to wss via Workers API automatically
-        let (url, is_websocket) = if !url.contains("://") {
-            (format!("https://{}", &url), true)
-        } else if let Some(url) = url.strip_prefix("libsql://") {
-            ("https://".to_owned() + url, true)
-        } else if let Some(url) = url.strip_prefix("wss://") {
-            ("https://".to_owned() + url, true)
-        } else if let Some(url) = url.strip_prefix("ws://") {
-            ("https://".to_owned() + url, true)
+        // Auto-update the URL to start with https:// if no protocol was specified
+        let base_url = if !url.contains("://") {
+            format!("https://{}", &url)
         } else {
-            (url, false)
+            url
         };
-
-        if !is_websocket {
-            let inner = ClientInner::Http(HttpClient {
-                url: url.clone(),
-                auth: format!("Bearer {token}"),
-            });
-            return Ok(Self { inner });
+        let url_for_queries = format!("{base_url}/v2/pipeline");
+        Self {
+            batons: Arc::new(RwLock::new(HashMap::new())),
+            url_for_queries,
+            auth: format!("Bearer {token}"),
         }
-
-        let url = url::Url::parse(&url)
-            .context("Failed to parse URL")
-            .map_err(|e| Error::from(format!("{e}")))?;
-
-        let mut req = Request::new(url.as_str(), Method::Get)?;
-        let headers = req.headers_mut()?;
-        headers.set("upgrade", "websocket")?;
-        headers.set("Authentication", &format!("Bearer {token}"))?;
-
-        let res = Fetch::Request(req).send().await?;
-
-        let socket = match res.websocket() {
-            Some(ws) => ws,
-            None => {
-                return Err(Error::RustError(
-                    "Failed to upgrade to websocket".to_string(),
-                ))
-            }
-        };
-
-        let mut event_stream = socket.events()?;
-
-        socket.accept()?;
-
-        let jwt = if token.is_empty() { None } else { Some(token) };
-
-        socket.send(&proto::ClientMsg::Hello { jwt })?;
-
-        // NOTICE: only a single stream id is used for now
-        socket.send(&proto::ClientMsg::Request {
-            request_id: 0,
-            request: proto::Request::OpenStream(proto::OpenStreamReq { stream_id: 0 }),
-        })?;
-
-        // Wait for Hello and OpenStream responses
-        // TODO: they could be pipelined with the first request to save latency.
-        // For that, we need to keep the event stream open in the Client,
-        // but that's tricky with the borrow checker.
-        WebSocketClient::recv_response(&mut event_stream).await?;
-        WebSocketClient::recv_response(&mut event_stream).await?;
-
-        tracing::debug!("Stream opened");
-        drop(event_stream);
-        let inner = ClientInner::WebSocket(WebSocketClient {
-            socket,
-            next_reqid: std::sync::atomic::AtomicI32::new(1),
-        });
-        Ok(Self { inner })
     }
 
     /// Creates a database client from a `Config` object.
     pub async fn from_config(config: Config) -> Result<Self> {
-        Self::new(config.url, config.auth_token.unwrap_or_default()).await
+        Ok(Self::new(config.url, config.auth_token.unwrap_or_default()))
     }
 
     /// Creates a database client, given a `Url`
@@ -173,13 +64,14 @@ impl Client {
             .try_into()
             .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
         let mut params = url.query_pairs();
-        // Try if a jwt=XXX parameter exists
-        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "jwt") {
-            Client::new(url.as_str(), token).await
-        } else {
-            Client::new(url, "").await
-        }
-        .map_err(|e| anyhow::anyhow!(format!("{e}")))
+        // Try if a auth_token=XXX parameter exists
+        Ok(
+            if let Some((_, token)) = params.find(|(param_key, _)| param_key == "auth_token") {
+                Client::new(url.as_str(), token)
+            } else {
+                Client::new(url, "")
+            },
+        )
     }
 
     /// Establishes a database client from Cloudflare Workers context.
@@ -191,112 +83,173 @@ impl Client {
     /// * `ctx` - Cloudflare Workers route context
     pub async fn from_ctx<D>(ctx: &worker::RouteContext<D>) -> Result<Self> {
         let token = ctx.secret("LIBSQL_CLIENT_TOKEN")?;
-        Self::new(
+        Ok(Self::new(
             ctx.secret("LIBSQL_CLIENT_URL")?.to_string(),
             token.to_string(),
-        )
-        .await
+        ))
+    }
+
+    fn into_hrana(stmt: Statement) -> crate::proto::Stmt {
+        let mut hrana_stmt = crate::proto::Stmt::new(stmt.sql, true);
+        for param in stmt.args {
+            hrana_stmt.bind(param);
+        }
+        hrana_stmt
     }
 
     async fn raw_batch_internal(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<BatchResult> {
-        match &self.inner {
-            ClientInner::WebSocket(ws) => {
-                let mut batch = proto::Batch::new();
+        let mut batch = crate::proto::Batch::new();
+        for stmt in stmts.into_iter() {
+            batch.step(None, Self::into_hrana(stmt.into()));
+        }
 
-                for stmt in stmts.into_iter() {
-                    let stmt: Statement = stmt.into();
-                    let mut hrana_stmt = proto::Stmt::new(stmt.sql, true);
-                    for param in stmt.args {
-                        hrana_stmt.bind(param);
-                    }
-                    batch.step(None, hrana_stmt);
-                }
+        let msg = pipeline::ClientMsg {
+            baton: None,
+            requests: vec![
+                pipeline::StreamRequest::Batch(pipeline::StreamBatchReq { batch }),
+                pipeline::StreamRequest::Close,
+            ],
+        };
+        let body = serde_json::to_string(&msg)?;
 
-                let mut event_stream = ws.socket.events()?;
+        let mut headers = Headers::new();
+        headers.append("Authorization", &self.auth).ok();
 
-                // NOTICE: if we want to support concurrent requests, we need to
-                // actually start managing stream ids
-                ws.send_request(proto::Request::Batch(proto::BatchReq {
-                    stream_id: 0,
-                    batch,
-                }))?;
+        let request_init = RequestInit {
+            body: Some(wasm_bindgen::JsValue::from_str(&body)),
+            headers,
+            cf: CfProperties::new(),
+            method: Method::Post,
+            redirect: RequestRedirect::Follow,
+        };
+        let req = Request::new_with_init(&self.url_for_queries, &request_init)?;
+        let mut response = Fetch::Request(req).send().await?;
+        if response.status_code() != 200 {
+            return Err(worker::Error::from(format!("{}", response.status_code())));
+        }
 
-                match WebSocketClient::recv_response(&mut event_stream).await? {
-                    proto::ServerMsg::ResponseOk {
-                        request_id: _,
-                        response: proto::Response::Batch(proto::BatchResp { result }),
-                    } => Ok(result),
-                    proto::ServerMsg::ResponseError {
-                        request_id: _,
-                        error,
-                    } => Err(Error::RustError(format!("{error}"))),
-                    _ => Err(Error::RustError("unexpected response".to_string())),
-                }
+        let resp: String = response.text().await?;
+        let mut response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+
+        if response.results.is_empty() {
+            return Err(worker::Error::from("Empty response from server"));
+        }
+        if response.results.len() > 2 {
+            // One with actual results, one closing the stream
+            return Err(worker::Error::from(format!(
+                "Unexpected response from server: {:?}",
+                response.results
+            )));
+        }
+        match response.results.swap_remove(0) {
+            pipeline::Response::Ok(pipeline::StreamResponseOk {
+                response: pipeline::StreamResponse::Batch(batch_result),
+            }) => Ok(batch_result.result),
+            pipeline::Response::Ok(_) => {
+                Err(worker::Error::from("Unexpected response from server"))
             }
-            ClientInner::Http(http) => {
-                let mut headers = Headers::new();
-                headers.append("Authorization", &http.auth).ok();
-                let (body, stmts_count) = crate::client::statements_to_string(stmts);
-                let request_init = RequestInit {
-                    body: Some(wasm_bindgen::JsValue::from_str(&body)),
-                    headers,
-                    cf: CfProperties::new(),
-                    method: Method::Post,
-                    redirect: RequestRedirect::Follow,
-                };
-                let req = Request::new_with_init(&http.url, &request_init)?;
-                let mut response = Fetch::Request(req).send().await?;
-                if response.status_code() != 200 {
-                    return Err(worker::Error::from(format!("{}", response.status_code())));
+            pipeline::Response::Error(e) => {
+                Err(worker::Error::from(format!("Error from server: {:?}", e)))
+            }
+        }
+    }
+    async fn execute_inner(
+        &self,
+        stmt: impl Into<Statement> + Send,
+        tx_id: u64,
+    ) -> Result<ResultSet> {
+        let stmt = Self::into_hrana(stmt.into());
+
+        let baton = if tx_id > 0 {
+            self.batons.read().unwrap().get(&tx_id).cloned()
+        } else {
+            None
+        };
+        let msg = pipeline::ClientMsg {
+            baton,
+            requests: vec![pipeline::StreamRequest::Execute(
+                pipeline::StreamExecuteReq { stmt },
+            )],
+        };
+        let body = serde_json::to_string(&msg)?;
+
+        let mut headers = Headers::new();
+        headers.append("Authorization", &self.auth).ok();
+
+        let request_init = RequestInit {
+            body: Some(wasm_bindgen::JsValue::from_str(&body)),
+            headers,
+            cf: CfProperties::new(),
+            method: Method::Post,
+            redirect: RequestRedirect::Follow,
+        };
+        let req = Request::new_with_init(&self.url_for_queries, &request_init)?;
+        let mut response = Fetch::Request(req).send().await?;
+        if response.status_code() != 200 {
+            return Err(worker::Error::from(format!("{}", response.status_code())));
+        }
+
+        let resp: String = response.text().await?;
+
+        let mut response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+
+        if tx_id > 0 {
+            match response.baton {
+                Some(baton) => {
+                    self.batons.write().unwrap().insert(tx_id, baton);
                 }
-                let resp: String = response.text().await?;
-                let response_json: serde_json::Value = serde_json::from_str(&resp)?;
-                crate::client::http_json_to_batch_result(response_json, stmts_count).map_err(|e| {
-                    worker::Error::from(format!("Error: {} ({:?})", e, request_init.body))
-                })
+                None => return Err(worker::Error::from("No baton in response")),
+            }
+        }
+
+        if response.results.is_empty() {
+            return Err(worker::Error::from("Empty response from server"));
+        }
+        if response.results.len() > 1 {
+            return Err(worker::Error::from(format!(
+                "Unexpected response from server: {:?}",
+                response.results
+            )));
+        }
+        match response.results.swap_remove(0) {
+            pipeline::Response::Ok(pipeline::StreamResponseOk {
+                response: pipeline::StreamResponse::Execute(execute_result),
+            }) => Ok(ResultSet::from(execute_result.result)),
+            pipeline::Response::Ok(_) => {
+                Err(worker::Error::from("Unexpected response from server"))
+            }
+            pipeline::Response::Error(e) => {
+                Err(worker::Error::from(format!("Error from server: {:?}", e)))
             }
         }
     }
 
-    async fn execute_internal(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        match &self.inner {
-            ClientInner::WebSocket(ws) => {
-                let stmt: Statement = stmt.into();
-                let mut hrana_stmt = proto::Stmt::new(stmt.sql, true);
-                for param in stmt.args {
-                    hrana_stmt.bind(param);
-                }
+    async fn close_stream_for(&self, tx_id: u64) -> anyhow::Result<()> {
+        let msg = pipeline::ClientMsg {
+            baton: self.batons.read().unwrap().get(&tx_id).cloned(),
+            requests: vec![pipeline::StreamRequest::Close],
+        };
 
-                let mut event_stream = ws.socket.events()?;
+        let body = serde_json::to_string(&msg)?;
 
-                ws.send_request(proto::Request::Execute(proto::ExecuteReq {
-                    stream_id: 0,
-                    stmt: hrana_stmt,
-                }))?;
-                match WebSocketClient::recv_response(&mut event_stream).await? {
-                    proto::ServerMsg::ResponseOk {
-                        request_id: _,
-                        response: proto::Response::Execute(proto::ExecuteResp { result }),
-                    } => Ok(ResultSet::from(result)),
-                    proto::ServerMsg::ResponseError {
-                        request_id: _,
-                        error,
-                    } => Err(Error::RustError(format!("{error}"))),
-                    _ => Err(Error::RustError("unexpected response".to_string())),
-                }
-            }
-            ClientInner::Http(_) => {
-                let results = self.raw_batch_internal(std::iter::once(stmt)).await?;
-                match (results.step_results.first(), results.step_errors.first()) {
-                    (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
-                    (Some(None), Some(Some(err))) => Err(Error::RustError(err.message.clone())),
-                    _ => unreachable!(),
-                }
-            }
-        }
+        let mut headers = Headers::new();
+        headers.append("Authorization", &self.auth).ok();
+        let request_init = RequestInit {
+            body: Some(wasm_bindgen::JsValue::from_str(&body)),
+            headers,
+            cf: CfProperties::new(),
+            method: Method::Post,
+            redirect: RequestRedirect::Follow,
+        };
+        let req = Request::new_with_init(&self.url_for_queries, &request_init)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        Fetch::Request(req).send().await.ok();
+
+        self.batons.write().unwrap().remove(&tx_id);
+        Ok(())
     }
 }
 
@@ -311,24 +264,36 @@ impl Client {
     }
 
     pub async fn execute(&self, stmt: impl Into<Statement>) -> anyhow::Result<ResultSet> {
-        self.execute_internal(stmt)
+        self.execute_inner(stmt.into(), 0)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     pub async fn execute_in_transaction(
         &self,
-        _tx_id: u64,
+        tx_id: u64,
         stmt: Statement,
     ) -> anyhow::Result<ResultSet> {
-        self.execute(stmt).await
+        self.execute_inner(stmt, tx_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    pub async fn commit_transaction(&self, _tx_id: u64) -> anyhow::Result<()> {
-        self.execute("COMMIT").await.map(|_| ())
+    pub async fn commit_transaction(&self, tx_id: u64) -> anyhow::Result<()> {
+        self.execute_inner("COMMIT", tx_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        self.close_stream_for(tx_id).await.ok();
+        Ok(())
     }
 
-    pub async fn rollback_transaction(&self, _tx_id: u64) -> anyhow::Result<()> {
-        self.execute("ROLLBACK").await.map(|_| ())
+    pub async fn rollback_transaction(&self, tx_id: u64) -> anyhow::Result<()> {
+        self.execute_inner("ROLLBACK", tx_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        self.close_stream_for(tx_id).await.ok();
+        Ok(())
     }
 }

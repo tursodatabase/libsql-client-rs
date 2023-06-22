@@ -1,15 +1,14 @@
 //! `Client` is the main structure to interact with the database.
+use anyhow::Result;
 
-use anyhow::{anyhow, Context, Result};
-use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
+use crate::{proto, BatchResult, ResultSet, Statement, Transaction};
 
-use crate::{proto, BatchResult, Col, ResultSet, Statement, Transaction, Value};
-
-static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// A generic client struct, wrapping possible backends.
 /// It's a convenience struct which allows implementing connect()
 /// with backends being passed as env parameters.
+#[derive(Debug)]
 pub enum Client {
     #[cfg(feature = "local_backend")]
     Local(crate::local::Client),
@@ -80,7 +79,7 @@ impl Client {
             .map(|maybe_rs| {
                 maybe_rs
                     .map(ResultSet::from)
-                    .ok_or_else(|| anyhow!("Unexpected missing result set"))
+                    .ok_or_else(|| anyhow::anyhow!("Unexpected missing result set"))
             })
             .collect();
         step_results.pop(); // END is not counted in the result, it's implicitly ignored
@@ -105,22 +104,7 @@ impl Client {
 
     pub async fn transaction(&self) -> Result<Transaction> {
         let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        match self {
-            #[cfg(feature = "local_backend")]
-            Self::Local(_) => Transaction::new(self, id).await,
-            #[cfg(feature = "hrana_backend")]
-            Self::Hrana(_) => Transaction::new(self, id).await,
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(_) => {
-                anyhow::bail!("Interactive transactions are not supported with the reqwest backend. Use batch() instead.")
-            }
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(_) => Transaction::new(self, id).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => {
-                anyhow::bail!("Interactive ransactions are not supported with the spin backend. Use batch() instead.")
-            }
-        }
+        Transaction::new(self, id).await
     }
 
     pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
@@ -128,13 +112,13 @@ impl Client {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
             #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(_) => unreachable!(),
+            Self::Reqwest(r) => r.execute_in_transaction(tx_id, stmt).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.execute_in_transaction(tx_id, stmt).await,
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.execute_in_transaction(tx_id, stmt).await,
             #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => unreachable!(),
+            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
     }
 
@@ -143,13 +127,13 @@ impl Client {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.commit_transaction(tx_id),
             #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(_) => unreachable!(),
+            Self::Reqwest(r) => r.commit_transaction(tx_id).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.commit_transaction(tx_id).await,
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.commit_transaction(tx_id).await,
             #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => unreachable!(),
+            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
     }
 
@@ -158,13 +142,13 @@ impl Client {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.rollback_transaction(tx_id),
             #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(_) => unreachable!(),
+            Self::Reqwest(r) => r.rollback_transaction(tx_id).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.rollback_transaction(tx_id).await,
             #[cfg(feature = "workers_backend")]
             Self::Workers(w) => w.rollback_transaction(tx_id).await,
             #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => unreachable!(),
+            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
     }
 }
@@ -197,17 +181,17 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client
         "ws" | "wss" => {
             Client::Hrana(crate::hrana::Client::from_config(config).await?)
         },
-        #[cfg(feature = "hrana_backend")]
+        #[cfg(feature = "reqwest_backend")]
         "libsql" => {
             let mut config = config;
             config.url = if config.url.scheme() == "libsql" {
                 // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
                 // Safe to unwrap, because we know that the scheme is libsql
-                url::Url::parse(&config.url.as_str().replace("libsql://", "wss://")).unwrap()
+                url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
             } else {
                 config.url
             };
-            Client::Hrana(crate::hrana::Client::from_config(config).await?)
+            Client::Reqwest(crate::reqwest::Client::from_config(config)?)
         }
         #[cfg(feature = "reqwest_backend")]
         "http" | "https" => {
@@ -252,181 +236,4 @@ pub async fn new_client() -> anyhow::Result<Client> {
         auth_token,
     })
     .await
-}
-
-// FIXME: serialize and deserialize with existing routines from sqld
-pub(crate) fn statements_to_string(
-    stmts: impl IntoIterator<Item = impl Into<Statement>>,
-) -> (String, usize) {
-    let mut body = "{\"statements\": [".to_string();
-    let mut stmts_count = 0;
-    for stmt in stmts {
-        body += &format!("{},", stmt.into());
-        stmts_count += 1;
-    }
-    if stmts_count > 0 {
-        body.pop();
-    }
-    body += "]}";
-    (body, stmts_count)
-}
-
-pub(crate) fn parse_columns(
-    columns: Vec<serde_json::Value>,
-    result_idx: usize,
-) -> Result<Vec<Col>> {
-    let mut result = Vec::with_capacity(columns.len());
-    for (idx, column) in columns.into_iter().enumerate() {
-        match column {
-            serde_json::Value::String(column) => result.push(Col { name: Some(column) }),
-            _ => {
-                return Err(anyhow!(format!(
-                    "Result {result_idx} column name {idx} not a string",
-                )))
-            }
-        }
-    }
-    Ok(result)
-}
-
-pub(crate) fn parse_value(
-    cell: serde_json::Value,
-    result_idx: usize,
-    row_idx: usize,
-    cell_idx: usize,
-) -> Result<Value> {
-    match cell {
-        serde_json::Value::Null => Ok(Value::Null),
-        serde_json::Value::Number(v) => match v.as_i64() {
-            Some(v) => Ok(Value::Integer{value: v} ),
-            None => match v.as_f64() {
-                Some(v) => Ok(Value::Float{value: v}),
-                None => Err(anyhow!(
-                    "Result {result_idx} row {row_idx} cell {cell_idx} had unknown number value: {v}",
-                )),
-            },
-        },
-        serde_json::Value::String(v) => Ok(Value::Text{value: v}),
-        serde_json::Value::Object(v) => {
-            let base64_field = v.get("base64").with_context(|| format!("Result {result_idx} row {row_idx} cell {cell_idx} had unknown object, expected base64 field"))?;
-            let base64_string = base64_field.as_str().with_context(|| format!("Result {result_idx} row {row_idx} cell {cell_idx} had empty base64 field: {base64_field}"))?;
-            let decoded = BASE64_STANDARD_NO_PAD.decode(base64_string)?;
-            Ok(Value::Blob{value: decoded})
-        },
-        _ => Err(anyhow!(
-            "Result {result_idx} row {row_idx} cell {cell_idx} had unknown type",
-        )),
-    }
-}
-
-pub(crate) fn parse_rows(
-    rows: Vec<serde_json::Value>,
-    cols_len: usize,
-    result_idx: usize,
-) -> Result<Vec<Vec<Value>>> {
-    let mut result = Vec::with_capacity(rows.len());
-    for (idx, row) in rows.into_iter().enumerate() {
-        match row {
-            serde_json::Value::Array(row) => {
-                if row.len() != cols_len {
-                    return Err(anyhow!(
-                        "Result {result_idx} row {idx} had wrong number of cells",
-                    ));
-                }
-                let mut cells: Vec<Value> = Vec::with_capacity(cols_len);
-                for (cell_idx, value) in row.into_iter().enumerate() {
-                    cells.push(parse_value(value, result_idx, idx, cell_idx)?);
-                }
-                result.push(cells)
-            }
-            _ => return Err(anyhow!("Result {result_idx} row {idx} was not an array",)),
-        }
-    }
-    Ok(result)
-}
-
-pub(crate) fn parse_query_result(
-    result: serde_json::Value,
-    idx: usize,
-) -> Result<(Option<proto::StmtResult>, Option<proto::Error>)> {
-    match result {
-        serde_json::Value::Object(obj) => {
-            if let Some(err) = obj.get("error") {
-                return match err {
-                    serde_json::Value::Object(obj) => match obj.get("message") {
-                        Some(serde_json::Value::String(msg)) => Ok((
-                            None,
-                            Some(proto::Error {
-                                message: msg.clone(),
-                            }),
-                        )),
-                        _ => Err(anyhow!("Result {idx} error message was not a string",)),
-                    },
-                    _ => Err(anyhow!("Result {idx} results was not an object",)),
-                };
-            }
-
-            let results = obj.get("results");
-            match results {
-                Some(serde_json::Value::Object(obj)) => {
-                    let columns = obj
-                        .get("columns")
-                        .ok_or_else(|| anyhow!(format!("Result {idx} had no columns")))?;
-                    let rows = obj
-                        .get("rows")
-                        .ok_or_else(|| anyhow!(format!("Result {idx} had no rows")))?;
-                    match (rows, columns) {
-                        (serde_json::Value::Array(rows), serde_json::Value::Array(columns)) => {
-                            let cols = parse_columns(columns.to_vec(), idx)?;
-                            let rows = parse_rows(rows.to_vec(), columns.len(), idx)?;
-                            // FIXME: affected_row_count and last_insert_rowid are not implemented yet
-                            let result_set = proto::StmtResult {
-                                cols,
-                                rows,
-                                affected_row_count: 0,
-                                last_insert_rowid: None,
-                            };
-                            Ok((Some(result_set), None))
-                        }
-                        _ => Err(anyhow!(
-                            "Result {idx} had rows or columns that were not an array",
-                        )),
-                    }
-                }
-                Some(_) => Err(anyhow!("Result {idx} was not an object",)),
-                None => Err(anyhow!("Result {idx} did not contain results or error",)),
-            }
-        }
-        _ => Err(anyhow!("Result {idx} was not an object",)),
-    }
-}
-
-pub(crate) fn http_json_to_batch_result(
-    response_json: serde_json::Value,
-    stmts_count: usize,
-) -> anyhow::Result<BatchResult> {
-    match response_json {
-        serde_json::Value::Array(results) => {
-            if results.len() != stmts_count {
-                return Err(anyhow::anyhow!(
-                    "Response array did not contain expected {stmts_count} results"
-                ));
-            }
-
-            let mut step_results: Vec<Option<proto::StmtResult>> = Vec::with_capacity(stmts_count);
-            let mut step_errors: Vec<Option<proto::Error>> = Vec::with_capacity(stmts_count);
-            for (idx, result) in results.into_iter().enumerate() {
-                let (step_result, step_error) =
-                    parse_query_result(result, idx).map_err(|e| anyhow::anyhow!("{e}"))?;
-                step_results.push(step_result);
-                step_errors.push(step_error);
-            }
-
-            Ok(BatchResult {
-                step_results,
-                step_errors,
-            })
-        }
-        e => Err(anyhow::anyhow!("Error: {}", e)),
-    }
 }
