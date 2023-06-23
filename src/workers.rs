@@ -169,12 +169,15 @@ impl Client {
         } else {
             None
         };
-        let msg = pipeline::ClientMsg {
+        let mut msg = pipeline::ClientMsg {
             baton,
             requests: vec![pipeline::StreamRequest::Execute(
                 pipeline::StreamExecuteReq { stmt },
             )],
         };
+        if tx_id == 0 {
+            msg.requests.push(pipeline::StreamRequest::Close);
+        }
         let body = serde_json::to_string(&msg)?;
 
         let mut headers = Headers::new();
@@ -209,7 +212,7 @@ impl Client {
         if response.results.is_empty() {
             return Err(worker::Error::from("Empty response from server"));
         }
-        if response.results.len() > 1 {
+        if response.results.len() > 2 {
             return Err(worker::Error::from(format!(
                 "Unexpected response from server: {:?}",
                 response.results
