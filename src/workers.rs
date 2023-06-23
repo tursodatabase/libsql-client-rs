@@ -29,6 +29,7 @@ impl Client {
         } else {
             url
         };
+        // FIXME: build with Url builder to avoid typos, like double /
         let url_for_queries = format!("{base_url}/v2/pipeline");
         Self {
             batons: Arc::new(RwLock::new(HashMap::new())),
