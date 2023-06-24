@@ -64,8 +64,9 @@ impl std::convert::From<proto::StmtResult> for ResultSet {
 }
 
 pub mod client;
-pub use client::{new_client, new_client_from_config, Client, Config};
+pub use client::{Client, Config};
 
+pub mod http;
 pub mod transaction;
 pub use transaction::Transaction;
 
@@ -92,7 +93,7 @@ pub mod hrana;
 /// ```rust,no_run
 ///   # async fn f() -> anyhow::Result<()> {
 ///   # use crate::libsql_client::{Statement, args};
-///   let db = libsql_client::new_client().await?;
+///   let db = libsql_client::Client::from_env().await?;
 ///   db.execute(
 ///       Statement::with_args("INSERT INTO cart(product_id, product_name, quantity, price) VALUES (?, ?, ?, ?)",
 ///       args!(64, "socks", 2, 4.5)),

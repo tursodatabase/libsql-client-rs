@@ -64,11 +64,14 @@ impl Client {
     /// # Examples
     ///
     /// ```
-    /// # use libsql_client::reqwest::Client;
+    /// # async fn f() -> anyhow::Result<()> {
+    /// # use libsql_client::hrana::Client;
     /// use url::Url;
     ///
     /// let url = Url::parse("https://localhost:8080?authToken=<access token>").unwrap();
-    /// let db = Client::from_url(url).unwrap();
+    /// let db = Client::from_url(url).await.unwrap();
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
     where

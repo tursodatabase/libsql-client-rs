@@ -62,7 +62,7 @@ async fn bump_counter(db: Client) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
-    match libsql_client::new_client().await {
+    match libsql_client::Client::from_env().await {
         Ok(client) => {
             match bump_counter(client).await {
                 Ok(response) => println!("Response:\n{response}"),

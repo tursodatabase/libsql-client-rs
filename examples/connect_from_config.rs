@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{args, new_client_from_config, Client, ResultSet, Statement};
+use libsql_client::{args, Client, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -64,7 +64,7 @@ async fn bump_counter(db: Client) -> Result<String> {
 
 #[tokio::main]
 async fn main() {
-    let db = new_client_from_config(libsql_client::Config {
+    let db = Client::from_config(libsql_client::Config {
         url: url::Url::parse("libsql://localhost:8080").unwrap(),
         auth_token: None,
     })

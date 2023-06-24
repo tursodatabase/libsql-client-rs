@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql_client::{args, new_client, Client, ResultSet, Statement};
+use libsql_client::{args, Client, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
 fn result_to_string(query_result: ResultSet) -> Result<String> {
@@ -71,7 +71,7 @@ async fn bump_counter(db: Client) -> Result<String> {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    let db = new_client().await.unwrap();
+    let db = Client::from_env().await.unwrap();
     let response = bump_counter(db)
         .await
         .unwrap_or_else(|e| format!("Error: {e}"));

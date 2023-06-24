@@ -12,14 +12,14 @@ static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 pub enum Client {
     #[cfg(feature = "local_backend")]
     Local(crate::local::Client),
-    #[cfg(feature = "reqwest_backend")]
-    Reqwest(crate::reqwest::Client),
+    #[cfg(any(
+        feature = "reqwest_backend",
+        feature = "workers_backend",
+        feature = "spin_backend"
+    ))]
+    Http(crate::http::Client),
     #[cfg(feature = "hrana_backend")]
     Hrana(crate::hrana::Client),
-    #[cfg(feature = "workers_backend")]
-    Workers(crate::workers::Client),
-    #[cfg(feature = "spin_backend")]
-    Spin(crate::spin::Client),
 }
 
 unsafe impl Send for Client {}
@@ -32,14 +32,14 @@ impl Client {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.raw_batch(stmts),
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.raw_batch(stmts).await,
+            #[cfg(any(
+                feature = "reqwest_backend",
+                feature = "workers_backend",
+                feature = "spin_backend"
+            ))]
+            Self::Http(r) => r.raw_batch(stmts).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.raw_batch(stmts).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.raw_batch(stmts).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(s) => s.raw_batch(stmts),
         }
     }
 
@@ -87,19 +87,33 @@ impl Client {
         step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
     }
 
+    pub fn batch_sync<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
+        &self,
+        stmts: I,
+    ) -> Result<Vec<ResultSet>>
+    where
+        <I as std::iter::IntoIterator>::IntoIter: std::marker::Send,
+    {
+        futures::executor::block_on(self.batch(stmts))
+    }
+
     pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.execute(stmt),
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.execute(stmt).await,
+            #[cfg(any(
+                feature = "reqwest_backend",
+                feature = "workers_backend",
+                feature = "spin_backend"
+            ))]
+            Self::Http(r) => r.execute(stmt).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.execute(stmt).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.execute(stmt).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(s) => s.execute(stmt),
         }
+    }
+
+    pub fn execute_sync(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        futures::executor::block_on(self.execute(stmt))
     }
 
     pub async fn transaction(&self) -> Result<Transaction> {
@@ -111,68 +125,76 @@ impl Client {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.execute_in_transaction(tx_id, stmt).await,
+            #[cfg(any(
+                feature = "reqwest_backend",
+                feature = "workers_backend",
+                feature = "spin_backend"
+            ))]
+            Self::Http(r) => r.execute_in_transaction(tx_id, stmt).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.execute_in_transaction(tx_id, stmt).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.execute_in_transaction(tx_id, stmt).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
+    }
+
+    pub fn execute_in_transaction_sync(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        futures::executor::block_on(self.execute_in_transaction(tx_id, stmt))
     }
 
     pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.commit_transaction(tx_id),
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.commit_transaction(tx_id).await,
+            #[cfg(any(
+                feature = "reqwest_backend",
+                feature = "workers_backend",
+                feature = "spin_backend"
+            ))]
+            Self::Http(r) => r.commit_transaction(tx_id).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.commit_transaction(tx_id).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.commit_transaction(tx_id).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
+    }
+
+    pub fn commit_transaction_sync(&self, tx_id: u64) -> Result<()> {
+        futures::executor::block_on(self.commit_transaction(tx_id))
     }
 
     pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.rollback_transaction(tx_id),
-            #[cfg(feature = "reqwest_backend")]
-            Self::Reqwest(r) => r.rollback_transaction(tx_id).await,
+            #[cfg(any(
+                feature = "reqwest_backend",
+                feature = "workers_backend",
+                feature = "spin_backend"
+            ))]
+            Self::Http(r) => r.rollback_transaction(tx_id).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.rollback_transaction(tx_id).await,
-            #[cfg(feature = "workers_backend")]
-            Self::Workers(w) => w.rollback_transaction(tx_id).await,
-            #[cfg(feature = "spin_backend")]
-            Self::Spin(_) => anyhow::bail!("Interactive ransactions are not supported yet with the spin backend. Use batch() instead."),
         }
+    }
+
+    pub fn rollback_transaction_sync(&self, tx_id: u64) -> Result<()> {
+        futures::executor::block_on(self.rollback_transaction(tx_id))
     }
 }
 
-/// Configuration for the database client
-pub struct Config {
-    pub url: url::Url,
-    pub auth_token: Option<String>,
-}
-
-/// Establishes a database client based on `Config` struct
-///
-/// # Examples
-///
-/// ```
-/// # async fn f() {
-/// # use libsql_client::Config;
-/// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
-/// let db = libsql_client::new_client_from_config(config).await.unwrap();
-/// # }
-/// ```
-pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client> {
-    let scheme = config.url.scheme();
-    Ok(match scheme {
+impl Client {
+    /// Establishes a database client based on `Config` struct
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn f() {
+    /// # use libsql_client::Config;
+    /// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
+    /// let db = libsql_client::Client::from_config(config).await.unwrap();
+    /// # }
+    /// ```
+    #[allow(unreachable_patterns)]
+    pub async fn from_config<'a>(config: Config) -> anyhow::Result<Client> {
+        let scheme = config.url.scheme();
+        Ok(match scheme {
         #[cfg(feature = "local_backend")]
         "file" => {
             Client::Local(crate::local::Client::new(config.url.to_string())?)
@@ -183,6 +205,7 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client
         },
         #[cfg(feature = "reqwest_backend")]
         "libsql" => {
+            let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
             let mut config = config;
             config.url = if config.url.scheme() == "libsql" {
                 // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
@@ -191,49 +214,89 @@ pub async fn new_client_from_config<'a>(config: Config) -> anyhow::Result<Client
             } else {
                 config.url
             };
-            Client::Reqwest(crate::reqwest::Client::from_config(config)?)
+            Client::Http(crate::http::Client::from_config(inner, config)?)
         }
         #[cfg(feature = "reqwest_backend")]
         "http" | "https" => {
-            Client::Reqwest(crate::reqwest::Client::from_config(config)?)
+            let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
+            Client::Http(crate::http::Client::from_config(inner, config)?)
         },
         #[cfg(feature = "workers_backend")]
-        "workers" => {
-            Client::Workers(crate::workers::Client::from_config(config).await.map_err(|e| anyhow::anyhow!("{}", e))?)
+        "workers" | "http" | "https" => {
+            let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
+            Client::Http(crate::http::Client::from_config(inner, config)?)
         },
         #[cfg(feature = "spin_backend")]
-        "spin" => {
-            Client::Spin(crate::spin::Client::from_config(config))
+        "spin" | "http" | "https" => {
+            let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
+            Client::Http(crate::http::Client::from_config(inner, config)?)
         },
         _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
     })
+    }
+
+    /// A sync flavor of `from_config`
+    pub fn from_config_sync(config: Config) -> anyhow::Result<Client> {
+        futures::executor::block_on(Self::from_config(config))
+    }
+
+    /// Establishes a database client based on environment variables
+    ///
+    /// # Env
+    /// * `LIBSQL_CLIENT_URL` - URL of the database endpoint - e.g. a https:// endpoint for remote connections
+    ///   (with specified credentials) or local file:/// path for a local database
+    /// * (optional) `LIBSQL_CLIENT_TOKEN` - authentication token for the database. Skip if your database
+    ///   does not require authentication
+    /// *
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
+    /// let db = libsql_client::Client::from_env().await.unwrap();
+    /// # }
+    /// ```
+    pub async fn from_env() -> anyhow::Result<Client> {
+        let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
+            anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
+        })?;
+        let auth_token = std::env::var("LIBSQL_CLIENT_TOKEN").ok();
+        Self::from_config(Config {
+            url: url::Url::parse(&url)?,
+            auth_token,
+        })
+        .await
+    }
+
+    /// A sync flavor of `from_env`
+    pub fn from_env_sync() -> anyhow::Result<Client> {
+        futures::executor::block_on(Self::from_env())
+    }
+
+    #[cfg(feature = "workers_backend")]
+    pub async fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
+        let url = env
+            .secret("LIBSQL_CLIENT_URL")
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .to_string();
+        let token = env
+            .secret("LIBSQL_CLIENT_TOKEN")
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .to_string();
+        let config = Config {
+            url: url::Url::parse(&url)?,
+            auth_token: Some(token),
+        };
+        let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
+        Ok(Client::Http(crate::http::Client::from_config(
+            inner, config,
+        )?))
+    }
 }
 
-/// Establishes a database client based on environment variables
-///
-/// # Env
-/// * `LIBSQL_CLIENT_URL` - URL of the database endpoint - e.g. a https:// endpoint for remote connections
-///   (with specified credentials) or local file:/// path for a local database
-/// * (optional) `LIBSQL_CLIENT_TOKEN` - authentication token for the database. Skip if your database
-///   does not require authentication
-/// *
-/// # Examples
-///
-/// ```
-/// # async fn run() {
-/// # use libsql_client::Config;
-/// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
-/// let db = libsql_client::new_client().await.unwrap();
-/// # }
-/// ```
-pub async fn new_client() -> anyhow::Result<Client> {
-    let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
-        anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
-    })?;
-    let auth_token = std::env::var("LIBSQL_CLIENT_TOKEN").ok();
-    new_client_from_config(Config {
-        url: url::Url::parse(&url)?,
-        auth_token,
-    })
-    .await
+/// Configuration for the database client
+pub struct Config {
+    pub url: url::Url,
+    pub auth_token: Option<String>,
 }
