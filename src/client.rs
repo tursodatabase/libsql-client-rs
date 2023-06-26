@@ -182,7 +182,14 @@ impl Client {
     /// # }
     /// ```
     #[allow(unreachable_patterns)]
-    pub async fn from_config<'a>(config: Config) -> anyhow::Result<Client> {
+    pub async fn from_config<'a>(mut config: Config) -> anyhow::Result<Client> {
+        config.url = if config.url.scheme() == "libsql" {
+            // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
+            // Safe to unwrap, because we know that the scheme is libsql
+            url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
+        } else {
+            config.url
+        };
         let scheme = config.url.scheme();
         Ok(match scheme {
             #[cfg(feature = "local_backend")]
@@ -193,19 +200,6 @@ impl Client {
             "ws" | "wss" => {
                 Client::Hrana(crate::hrana::Client::from_config(config).await?)
             },
-            #[cfg(feature = "reqwest_backend")]
-            "libsql" => {
-                let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
-                let mut config = config;
-                config.url = if config.url.scheme() == "libsql" {
-                    // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
-                    // Safe to unwrap, because we know that the scheme is libsql
-                    url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
-                } else {
-                    config.url
-                };
-                Client::Http(crate::http::Client::from_config(inner, config)?)
-            }
             #[cfg(feature = "reqwest_backend")]
             "http" | "https" => {
                 let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
