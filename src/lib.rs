@@ -64,11 +64,11 @@ impl std::convert::From<proto::StmtResult> for ResultSet {
 }
 
 pub mod client;
-pub use client::{Client, Config};
+pub use client::{Client, Config, SyncClient};
 
 pub mod http;
 pub mod transaction;
-pub use transaction::Transaction;
+pub use transaction::{SyncTransaction, Transaction};
 
 #[cfg(feature = "workers_backend")]
 pub mod workers;

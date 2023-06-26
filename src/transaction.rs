@@ -1,6 +1,6 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
-use crate::{Client, ResultSet, Statement};
+use crate::{Client, ResultSet, Statement, SyncClient};
 use anyhow::Result;
 
 pub struct Transaction<'a> {
@@ -49,23 +49,48 @@ impl<'a> Transaction<'a> {
     pub async fn rollback(self) -> Result<()> {
         self.client.rollback_transaction(self.id).await
     }
+}
 
-    pub fn new_sync(client: &'a Client, id: u64) -> Result<Transaction<'a>> {
-        client
-            .execute_in_transaction_sync(id, Statement::from("BEGIN"))
-            .map(|_| Self { id, client })
+pub struct SyncTransaction<'a> {
+    pub(crate) id: u64,
+    pub(crate) client: &'a SyncClient,
+}
+
+impl<'a> SyncTransaction<'a> {
+    pub fn new(client: &'a SyncClient, id: u64) -> Result<SyncTransaction<'a>> {
+        client.execute_in_transaction(id, Statement::from("BEGIN"))?;
+        Ok(Self { id, client })
     }
 
-    pub fn execute_sync(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
-        self.client
-            .execute_in_transaction_sync(self.id, stmt.into())
+    /// Executes a statement within the current transaction.
+    /// # Example
+    ///
+    /// ```rust,no_run
+    ///   # fn f() -> anyhow::Result<()> {
+    ///   # use crate::libsql_client::{Statement, args};
+    ///   let mut db = libsql_client::SyncClient::from_env()?;
+    ///   let tx = db.transaction()?;
+    ///   tx.execute(Statement::with_args("INSERT INTO users (name) VALUES (?)", args!["John"]))?;
+    ///   let res = tx.execute(Statement::with_args("INSERT INTO users (name) VALUES (?)", args!["Jane"]));
+    ///   if res.is_err() {
+    ///     tx.rollback()?;
+    ///   } else {
+    ///     tx.commit()?;
+    ///   }
+    ///   # Ok(())
+    ///   # }
+    /// ```
+    pub fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
+        self.client.execute_in_transaction(self.id, stmt.into())
     }
 
-    pub fn commit_sync(self) -> Result<()> {
-        self.client.commit_transaction_sync(self.id)
+    /// Commits the transaction to the database.
+    pub fn commit(self) -> Result<()> {
+        self.client.commit_transaction(self.id)
     }
 
-    pub fn rollback_sync(self) -> Result<()> {
-        self.client.rollback_transaction_sync(self.id)
+    /// Rolls back the transaction, cancelling any of its side-effects.
+    pub fn rollback(self) -> Result<()> {
+        self.client.rollback_transaction(self.id)
     }
 }

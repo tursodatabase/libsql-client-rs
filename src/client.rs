@@ -1,7 +1,7 @@
 //! `Client` is the main structure to interact with the database.
 use anyhow::Result;
 
-use crate::{proto, BatchResult, ResultSet, Statement, Transaction};
+use crate::{proto, BatchResult, ResultSet, Statement, SyncTransaction, Transaction};
 
 static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -20,6 +20,12 @@ pub enum Client {
     Http(crate::http::Client),
     #[cfg(feature = "hrana_backend")]
     Hrana(crate::hrana::Client),
+}
+
+/// A synchronous flavor of `Client`. All its public methods are synchronous,
+/// to make it usable in environments that don't support async/await.
+pub struct SyncClient {
+    inner: Client,
 }
 
 unsafe impl Send for Client {}
@@ -112,10 +118,6 @@ impl Client {
         }
     }
 
-    pub fn execute_sync(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
-        futures::executor::block_on(self.execute(stmt))
-    }
-
     pub async fn transaction(&self) -> Result<Transaction> {
         let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Transaction::new(self, id).await
@@ -136,10 +138,6 @@ impl Client {
         }
     }
 
-    pub fn execute_in_transaction_sync(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
-        futures::executor::block_on(self.execute_in_transaction(tx_id, stmt))
-    }
-
     pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
@@ -155,10 +153,6 @@ impl Client {
         }
     }
 
-    pub fn commit_transaction_sync(&self, tx_id: u64) -> Result<()> {
-        futures::executor::block_on(self.commit_transaction(tx_id))
-    }
-
     pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
@@ -172,10 +166,6 @@ impl Client {
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.rollback_transaction(tx_id).await,
         }
-    }
-
-    pub fn rollback_transaction_sync(&self, tx_id: u64) -> Result<()> {
-        futures::executor::block_on(self.rollback_transaction(tx_id))
     }
 }
 
@@ -195,49 +185,44 @@ impl Client {
     pub async fn from_config<'a>(config: Config) -> anyhow::Result<Client> {
         let scheme = config.url.scheme();
         Ok(match scheme {
-        #[cfg(feature = "local_backend")]
-        "file" => {
-            Client::Local(crate::local::Client::new(config.url.to_string())?)
-        },
-        #[cfg(feature = "hrana_backend")]
-        "ws" | "wss" => {
-            Client::Hrana(crate::hrana::Client::from_config(config).await?)
-        },
-        #[cfg(feature = "reqwest_backend")]
-        "libsql" => {
-            let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
-            let mut config = config;
-            config.url = if config.url.scheme() == "libsql" {
-                // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
-                // Safe to unwrap, because we know that the scheme is libsql
-                url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
-            } else {
-                config.url
-            };
-            Client::Http(crate::http::Client::from_config(inner, config)?)
-        }
-        #[cfg(feature = "reqwest_backend")]
-        "http" | "https" => {
-            let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
-            Client::Http(crate::http::Client::from_config(inner, config)?)
-        },
-        #[cfg(feature = "workers_backend")]
-        "workers" | "http" | "https" => {
-            let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
-            Client::Http(crate::http::Client::from_config(inner, config)?)
-        },
-        #[cfg(feature = "spin_backend")]
-        "spin" | "http" | "https" => {
-            let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
-            Client::Http(crate::http::Client::from_config(inner, config)?)
-        },
-        _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
-    })
-    }
-
-    /// A sync flavor of `from_config`
-    pub fn from_config_sync(config: Config) -> anyhow::Result<Client> {
-        futures::executor::block_on(Self::from_config(config))
+            #[cfg(feature = "local_backend")]
+            "file" => {
+                Client::Local(crate::local::Client::new(config.url.to_string())?)
+            },
+            #[cfg(feature = "hrana_backend")]
+            "ws" | "wss" => {
+                Client::Hrana(crate::hrana::Client::from_config(config).await?)
+            },
+            #[cfg(feature = "reqwest_backend")]
+            "libsql" => {
+                let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
+                let mut config = config;
+                config.url = if config.url.scheme() == "libsql" {
+                    // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
+                    // Safe to unwrap, because we know that the scheme is libsql
+                    url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
+                } else {
+                    config.url
+                };
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            }
+            #[cfg(feature = "reqwest_backend")]
+            "http" | "https" => {
+                let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            #[cfg(feature = "workers_backend")]
+            "workers" | "http" | "https" => {
+                let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            #[cfg(feature = "spin_backend")]
+            "spin" | "http" | "https" => {
+                let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
+        })
     }
 
     /// Establishes a database client based on environment variables
@@ -269,11 +254,6 @@ impl Client {
         .await
     }
 
-    /// A sync flavor of `from_env`
-    pub fn from_env_sync() -> anyhow::Result<Client> {
-        futures::executor::block_on(Self::from_env())
-    }
-
     #[cfg(feature = "workers_backend")]
     pub fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
         let url = env
@@ -292,6 +272,59 @@ impl Client {
         Ok(Client::Http(crate::http::Client::from_config(
             inner, config,
         )?))
+    }
+}
+
+pub mod sync {}
+impl SyncClient {
+    pub fn from_config(config: Config) -> Result<Self> {
+        Ok(Self {
+            inner: futures::executor::block_on(Client::from_config(config))?,
+        })
+    }
+
+    pub fn from_env() -> Result<Self> {
+        Ok(Self {
+            inner: futures::executor::block_on(Client::from_env())?,
+        })
+    }
+
+    #[cfg(feature = "workers_backend")]
+    pub fn from_workers_env(env: &worker::Env) -> Result<Self> {
+        Ok(Self {
+            inner: Client::from_workers_env(env)?,
+        })
+    }
+
+    pub fn batch<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
+        &self,
+        stmts: I,
+    ) -> Result<Vec<ResultSet>>
+    where
+        <I as std::iter::IntoIterator>::IntoIter: std::marker::Send,
+    {
+        futures::executor::block_on(self.inner.batch(stmts))
+    }
+
+    pub fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        futures::executor::block_on(self.inner.execute(stmt))
+    }
+
+    pub fn transaction(&self) -> Result<SyncTransaction> {
+        let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SyncTransaction::new(self, id)
+    }
+
+    pub fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        futures::executor::block_on(self.inner.execute_in_transaction(tx_id, stmt))
+    }
+
+    pub fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+        futures::executor::block_on(self.inner.commit_transaction(tx_id))
+    }
+
+    pub fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+        futures::executor::block_on(self.inner.rollback_transaction(tx_id))
     }
 }
 
