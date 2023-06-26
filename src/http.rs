@@ -5,12 +5,20 @@ use std::sync::{Arc, RwLock};
 
 use crate::{proto::pipeline, BatchResult, ResultSet, Statement};
 
+/// Information about the current session: the server-generated cookie
+/// and the URL that should be used for further communication.
+#[derive(Clone, Debug, Default)]
+struct Cookie {
+    baton: Option<String>,
+    base_url: Option<String>,
+}
+
 /// Generic HTTP client. Needs a helper function that actually sends
 /// the request.
 #[derive(Clone, Debug)]
 pub struct Client {
     inner: InnerClient,
-    batons: Arc<RwLock<HashMap<u64, String>>>,
+    cookies: Arc<RwLock<HashMap<u64, Cookie>>>,
     url_for_queries: String,
     auth: String,
 }
@@ -61,7 +69,7 @@ impl Client {
         let url_for_queries = format!("{base_url}v2/pipeline");
         Self {
             inner,
-            batons: Arc::new(RwLock::new(HashMap::new())),
+            cookies: Arc::new(RwLock::new(HashMap::new())),
             url_for_queries,
             auth: format!("Bearer {token}"),
         }
@@ -150,27 +158,40 @@ impl Client {
     ) -> Result<ResultSet> {
         let stmt = Self::into_hrana(stmt.into());
 
-        let baton = if tx_id > 0 {
-            self.batons.read().unwrap().get(&tx_id).cloned()
+        let cookie = if tx_id > 0 {
+            self.cookies
+                .read()
+                .unwrap()
+                .get(&tx_id)
+                .cloned()
+                .unwrap_or_default()
         } else {
-            None
+            Cookie::default()
         };
         let msg = pipeline::ClientMsg {
-            baton,
+            baton: cookie.baton,
             requests: vec![pipeline::StreamRequest::Execute(
                 pipeline::StreamExecuteReq { stmt },
             )],
         };
         let body = serde_json::to_string(&msg)?;
-        let mut response: pipeline::ServerMsg = self
-            .inner
-            .send(self.url_for_queries.clone(), self.auth.clone(), body)
-            .await?;
+        let url = cookie
+            .base_url
+            .unwrap_or_else(|| self.url_for_queries.clone());
+        let mut response: pipeline::ServerMsg =
+            self.inner.send(url, self.auth.clone(), body).await?;
 
         if tx_id > 0 {
+            let base_url = response.base_url;
             match response.baton {
                 Some(baton) => {
-                    self.batons.write().unwrap().insert(tx_id, baton);
+                    self.cookies.write().unwrap().insert(
+                        tx_id,
+                        Cookie {
+                            baton: Some(baton),
+                            base_url,
+                        },
+                    );
                 }
                 None => anyhow::bail!("Stream closed: server returned empty baton"),
             }
@@ -202,16 +223,23 @@ impl Client {
     }
 
     async fn close_stream_for(&self, tx_id: u64) -> Result<()> {
+        let cookie = self
+            .cookies
+            .read()
+            .unwrap()
+            .get(&tx_id)
+            .cloned()
+            .unwrap_or_default();
         let msg = pipeline::ClientMsg {
-            baton: self.batons.read().unwrap().get(&tx_id).cloned(),
+            baton: cookie.baton,
             requests: vec![pipeline::StreamRequest::Close],
         };
+        let url = cookie
+            .base_url
+            .unwrap_or_else(|| self.url_for_queries.clone());
         let body = serde_json::to_string(&msg)?;
-        self.inner
-            .send(self.url_for_queries.clone(), self.auth.clone(), body)
-            .await
-            .ok();
-        self.batons.write().unwrap().remove(&tx_id);
+        self.inner.send(url, self.auth.clone(), body).await.ok();
+        self.cookies.write().unwrap().remove(&tx_id);
         Ok(())
     }
 
