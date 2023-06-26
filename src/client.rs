@@ -275,7 +275,7 @@ impl Client {
     }
 
     #[cfg(feature = "workers_backend")]
-    pub async fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
+    pub fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
         let url = env
             .secret("LIBSQL_CLIENT_URL")
             .map_err(|e| anyhow::anyhow!("{e}"))?
