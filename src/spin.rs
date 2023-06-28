@@ -29,3 +29,9 @@ impl HttpClient {
         Ok(response)
     }
 }
+
+impl Default for HttpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
