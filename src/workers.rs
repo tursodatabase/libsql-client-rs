@@ -7,11 +7,11 @@ use crate::proto::pipeline;
 pub struct HttpClient;
 
 impl HttpClient {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self
     }
 
-    pub(crate) async fn send(
+    pub async fn send(
         &self,
         url: String,
         auth: String,

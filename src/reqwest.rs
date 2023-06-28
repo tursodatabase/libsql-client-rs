@@ -8,13 +8,13 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: reqwest::Client::new(),
         }
     }
 
-    pub(crate) async fn send(
+    pub async fn send(
         &self,
         url: String,
         auth: String,
