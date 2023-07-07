@@ -6,9 +6,6 @@
 //! libsql-client compiles to wasm32-unknown-unknown target, which makes it a great
 //! driver for environments that run on WebAssembly.
 //!
-//! It is expected to become a general-purpose driver for communicating with sqld/libSQL,
-//! but the only backend implemented at the moment is for Cloudflare Workers environment.
-
 pub mod statement;
 pub use statement::Statement;
 
