@@ -1,4 +1,4 @@
-//! `Client` is the main structure to interact with the database.
+//! [Client] is the main structure to interact with the database.
 use anyhow::Result;
 
 use crate::{proto, BatchResult, ResultSet, Statement, SyncTransaction, Transaction};
@@ -22,7 +22,7 @@ pub enum Client {
     Hrana(crate::hrana::Client),
 }
 
-/// A synchronous flavor of `Client`. All its public methods are synchronous,
+/// A synchronous flavor of [Client]. All its public methods are synchronous,
 /// to make it usable in environments that don't support async/await.
 pub struct SyncClient {
     inner: Client,
@@ -31,6 +31,25 @@ pub struct SyncClient {
 unsafe impl Send for Client {}
 
 impl Client {
+    /// Executes a batch of independent SQL statements.
+    ///
+    /// For a version in which statements execute transactionally, see [`Client::batch()`]
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").await.unwrap();
+    /// let res = db.raw_batch([
+    ///   "select * from foo",
+    ///   "insert into foo(bar) values ('bar')"
+    /// ]).await.unwrap();
+    /// # }
+    /// ```
     pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
@@ -49,12 +68,26 @@ impl Client {
         }
     }
 
-    /// Executes a batch of SQL statements, wrapped in "BEGIN", "END", transaction-style.
-    /// Each statement is going to run in its own transaction,
-    /// unless they're wrapped in BEGIN and END
+    /// Transactionally executes a batch of SQL statements.
     ///
+    /// For a version in which statements can fail or succeed independently, see [`Client::raw_batch()`]
     /// # Arguments
     /// * `stmts` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").await.unwrap();
+    /// let res = db.batch([
+    ///   "select * from foo",
+    ///   "insert into foo(bar) values ('bar')"
+    /// ]).await.unwrap();
+    /// assert_eq!(res.len(), 2)
+    /// # }
+    /// ```
     pub async fn batch<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
         &self,
         stmts: I,
@@ -93,6 +126,29 @@ impl Client {
         step_results.into_iter().collect::<Result<Vec<ResultSet>>>()
     }
 
+    /// Transactionally executes a batch of SQL statements, in synchronous contexts.
+    ///
+    /// This method calls [block_on](`futures::executor::block_on()`) internally.
+    ///
+    /// For the async version of this method, see [`Client::batch()`]
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").await.unwrap();
+    /// let res = db.batch_sync([
+    ///   "select * from foo",
+    ///   "insert into foo(bar) values ('bar')"
+    /// ]).unwrap();
+    /// assert_eq!(res.len(), 2)
+    /// # }
+    /// ```
     pub fn batch_sync<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
         &self,
         stmts: I,
@@ -103,6 +159,21 @@ impl Client {
         futures::executor::block_on(self.batch(stmts))
     }
 
+    /// Executes a single SQL statement
+    ///
+    /// # Arguments
+    /// * `stmt` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").await.unwrap();
+    /// db.execute("select * from foo").await.unwrap();
+    /// # }
+    /// ```
     pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
@@ -118,12 +189,30 @@ impl Client {
         }
     }
 
+    /// Creates an interactive transaction
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").await.unwrap();
+    /// let tx = db.transaction().await.unwrap();
+    /// tx.execute("select * from foo").await.unwrap();
+    /// tx.commit();
+    /// # }
+    /// ```
     pub async fn transaction(&self) -> Result<Transaction> {
         let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Transaction::new(self, id).await
     }
 
-    pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+    pub(crate) async fn execute_in_transaction(
+        &self,
+        tx_id: u64,
+        stmt: Statement,
+    ) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
@@ -138,7 +227,7 @@ impl Client {
         }
     }
 
-    pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+    pub(crate) async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.commit_transaction(tx_id),
@@ -153,7 +242,7 @@ impl Client {
         }
     }
 
-    pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+    pub(crate) async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
             Self::Local(l) => l.rollback_transaction(tx_id),
@@ -170,14 +259,31 @@ impl Client {
 }
 
 impl Client {
-    /// Establishes a database client based on `Config` struct
+    /// Creates an in-memory database
     ///
     /// # Examples
     ///
     /// ```
     /// # async fn f() {
     /// # use libsql_client::Config;
-    /// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
+    /// let db = libsql_client::Client::in_memory().unwrap();
+    /// # }
+    /// ```
+    pub fn in_memory() -> anyhow::Result<Client> {
+        Ok(Client::Local(crate::local::Client::in_memory()?))
+    }
+
+    /// Establishes a database client based on [Config] struct
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn f() {
+    /// # use libsql_client::Config;
+    /// let config = Config {
+    ///   url: url::Url::parse("file:////tmp/example.db").unwrap(),
+    ///   auth_token: None
+    /// };
     /// let db = libsql_client::Client::from_config(config).await.unwrap();
     /// # }
     /// ```
@@ -271,12 +377,56 @@ impl Client {
 
 pub mod sync {}
 impl SyncClient {
+    /// Creates an in-memory database
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn f() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// # }
+    /// ```
+    pub fn in_memory() -> anyhow::Result<Self> {
+        Ok(Self {
+            inner: Client::in_memory()?,
+        })
+    }
+
+    /// Establishes a database client based on [Config] struct
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn f() {
+    /// # use libsql_client::Config;
+    /// let config = Config { url: url::Url::parse("file:////tmp/example.db").unwrap(), auth_token: None };
+    /// let db = libsql_client::SyncClient::from_config(config).unwrap();
+    /// # }
+    /// ```
     pub fn from_config(config: Config) -> Result<Self> {
         Ok(Self {
             inner: futures::executor::block_on(Client::from_config(config))?,
         })
     }
 
+    /// Establishes a database client based on environment variables
+    ///
+    /// # Env
+    /// * `LIBSQL_CLIENT_URL` - URL of the database endpoint - e.g. a https:// endpoint for remote connections
+    ///   (with specified credentials) or local file:/// path for a local database
+    /// * (optional) `LIBSQL_CLIENT_TOKEN` - authentication token for the database. Skip if your database
+    ///   does not require authentication
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn run() {
+    /// # use libsql_client::Config;
+    /// # std::env::set_var("LIBSQL_CLIENT_URL", "file:////tmp/example.db");
+    /// let db = libsql_client::SyncClient::from_env().unwrap();
+    /// # }
+    /// ```
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             inner: futures::executor::block_on(Client::from_env())?,
@@ -290,6 +440,52 @@ impl SyncClient {
         })
     }
 
+    /// Executes a batch of independent SQL statements.
+    ///
+    /// For a version in which statements execute transactionally, see [`SyncClient::batch()`]
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").unwrap();
+    /// let res = db.raw_batch([
+    ///   "select * from foo",
+    ///   "insert into foo(bar) values ('bar')"
+    /// ]).unwrap();
+    /// # }
+    /// ```
+    pub fn raw_batch(
+        &self,
+        stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
+    ) -> Result<BatchResult> {
+        futures::executor::block_on(self.inner.raw_batch(stmts))
+    }
+
+    /// Transactionally executes a batch of SQL statements.
+    ///
+    /// For a version in which statements can fail or succeed independently, see [`SyncClient::raw_batch()`]
+    /// # Arguments
+    /// * `stmts` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").unwrap();
+    /// let res = db.batch([
+    ///   "select * from foo",
+    ///   "insert into foo(bar) values ('bar')"
+    /// ]).unwrap();
+    /// assert_eq!(res.len(), 2)
+    /// # }
+    /// ```
     pub fn batch<I: IntoIterator<Item = impl Into<Statement> + Send> + Send>(
         &self,
         stmts: I,
@@ -300,24 +496,53 @@ impl SyncClient {
         futures::executor::block_on(self.inner.batch(stmts))
     }
 
+    /// Executes a single SQL statement
+    ///
+    /// # Arguments
+    /// * `stmt` - SQL statements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").unwrap();
+    /// db.execute("select * from foo").unwrap();
+    /// # }
+    /// ```
     pub fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         futures::executor::block_on(self.inner.execute(stmt))
     }
 
+    /// Creates an interactive transaction
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// # db.execute("create table foo(bar text)").unwrap();
+    /// let tx = db.transaction().unwrap();
+    /// tx.execute("select * from foo").unwrap();
+    /// tx.commit();
+    /// # }
+    /// ```
     pub fn transaction(&self) -> Result<SyncTransaction> {
         let id = TRANSACTION_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         SyncTransaction::new(self, id)
     }
 
-    pub fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+    pub(crate) fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
         futures::executor::block_on(self.inner.execute_in_transaction(tx_id, stmt))
     }
 
-    pub fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+    pub(crate) fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         futures::executor::block_on(self.inner.commit_transaction(tx_id))
     }
 
-    pub fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
+    pub(crate) fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         futures::executor::block_on(self.inner.rollback_transaction(tx_id))
     }
 }
@@ -329,7 +554,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// Create a new `Config`
+    /// Create a new [Config]
     /// # Examples
     ///
     /// ```

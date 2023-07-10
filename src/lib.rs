@@ -16,17 +16,102 @@ pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Represents a row returned from the database.
 pub struct Row {
     pub values: Vec<Value>,
     #[cfg(feature = "mapping_names_to_values_in_rows")]
     pub value_map: std::collections::HashMap<String, Value>,
 }
 
+impl<'a> Row {
+    /// Try to get a value by index from this row and convert it to the desired type
+    ///
+    /// Will return an error if the index is invalid or if the value cannot be converted to the
+    /// desired type
+    ///
+    /// # Examples
+    /// ```
+    /// # async fn f() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// db.execute("create table example(num integer, str text)").unwrap();
+    /// db.execute("insert into example (num, str) values (0, 'zero')").unwrap();
+    /// let rs = db.execute("select * from example").unwrap();
+    /// let row = &rs.rows[0]; // ResultSet returns array of Rows
+    /// let num : usize = row.try_get(0).unwrap();
+    /// let text : &str = row.try_get(1).unwrap();
+    /// # }
+    /// ```
+    pub fn try_get<V: TryFrom<&'a Value, Error = String>>(
+        &'a self,
+        index: usize,
+    ) -> anyhow::Result<V> {
+        let val = self
+            .values
+            .get(index)
+            .ok_or(anyhow::anyhow!("out of bound index {}", index))?;
+        val.try_into().map_err(|x: String| anyhow::anyhow!(x))
+    }
+
+    /// Try to get a value given a column name from this row and convert it to the desired type
+    ///
+    /// Will return an error if the column name is invalid or if the value cannot be converted to the
+    /// desired type
+    ///
+    /// # Examples
+    /// ```
+    /// # async fn f() {
+    /// # use libsql_client::Config;
+    /// let db = libsql_client::SyncClient::in_memory().unwrap();
+    /// db.execute("create table example(num integer, str text)").unwrap();
+    /// db.execute("insert into example (num, str) values (0, 'zero')").unwrap();
+    /// let rs = db.execute("select * from example").unwrap();
+    /// let row = &rs.rows[0]; // ResultSet returns array of Rows
+    /// let num : usize = row.try_column("num").unwrap();
+    /// let text : &str = row.try_column("str").unwrap();
+    /// # }
+    /// ```
+    #[cfg(feature = "mapping_names_to_values_in_rows")]
+    pub fn try_column<V: TryFrom<&'a Value, Error = String>>(
+        &'a self,
+        col: &str,
+    ) -> anyhow::Result<V> {
+        let val = self
+            .value_map
+            .get(col)
+            .ok_or(anyhow::anyhow!("column `{}` not present", col))?;
+        val.try_into().map_err(|x: String| anyhow::anyhow!(x))
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Represents the result of a database query
+///
+/// # Examples
+/// ```
+/// # async fn f() {
+/// # use libsql_client::Config;
+/// let db = libsql_client::SyncClient::in_memory().unwrap();
+/// let rs = db.execute("create table example(num integer, str text)").unwrap();
+/// assert_eq!(rs.columns.is_empty(), true);
+/// assert_eq!(rs.rows.is_empty(), true);
+/// assert_eq!(rs.rows_affected, 0);
+/// assert_eq!(rs.last_insert_rowid, None);
+/// db.execute("insert into example (num, str) values (0, 'zero')").unwrap();
+/// let rs = db.execute("select * from example").unwrap();
+/// assert_eq!(rs.columns, ["num", "str"]);
+/// assert_eq!(rs.rows.len(), 1)
+/// # }
+/// ```
 pub struct ResultSet {
+    /// name of the columns present in this `ResultSet`.
     pub columns: Vec<String>,
+    /// One entry per row returned from the database. See [Row] for details.
     pub rows: Vec<Row>,
+    /// How many rows were changed by this statement
     pub rows_affected: u64,
+    /// the rowid for last insertion. See <https://www.sqlite.org/c3ref/last_insert_rowid.html> for
+    /// details
     pub last_insert_rowid: Option<i64>,
 }
 
