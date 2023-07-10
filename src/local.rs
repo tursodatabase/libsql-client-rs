@@ -1,7 +1,10 @@
 use crate::{proto, proto::StmtResult, BatchResult, Col, ResultSet, Statement, Value};
 use anyhow::Result;
+use sqlite3_parser::ast::{Cmd, Stmt};
+use sqlite3_parser::lexer::sql::Parser;
 use std::sync::{Arc, Mutex};
 
+use fallible_iterator::FallibleIterator;
 use rusqlite::types::Value as RusqliteValue;
 
 /// Database client. This is the main structure used to
@@ -127,12 +130,28 @@ impl Client {
                     .collect();
                 rows.push(cells)
             }
-            // FIXME: affected_row_count and last_insert_rowid are not implemented yet
+            let parser = Parser::new(sql_string.as_bytes());
+            let cmd = parser.last();
+
+            let last_insert_rowid = match cmd {
+                Ok(Some(Cmd::Stmt(Stmt::Insert { .. }))) => Some(inner.last_insert_rowid()),
+                _ => None,
+            };
+
+            let affected_row_count = match cmd {
+                Ok(Some(
+                    Cmd::Stmt(Stmt::Insert { .. })
+                    | Cmd::Stmt(Stmt::Update { .. })
+                    | Cmd::Stmt(Stmt::Delete { .. }),
+                )) => inner.changes(),
+                _ => 0,
+            };
+
             let stmt_result = StmtResult {
                 cols,
                 rows,
-                affected_row_count: 0,
-                last_insert_rowid: None,
+                affected_row_count,
+                last_insert_rowid,
             };
             step_results.push(Some(stmt_result));
             step_errors.push(None);
