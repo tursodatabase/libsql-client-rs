@@ -269,6 +269,7 @@ impl Client {
     /// let db = libsql_client::Client::in_memory().unwrap();
     /// # }
     /// ```
+    #[cfg(feature = "local_backend")]
     pub fn in_memory() -> anyhow::Result<Client> {
         Ok(Client::Local(crate::local::Client::in_memory()?))
     }
@@ -387,6 +388,7 @@ impl SyncClient {
     /// let db = libsql_client::SyncClient::in_memory().unwrap();
     /// # }
     /// ```
+    #[cfg(feature = "local_backend")]
     pub fn in_memory() -> anyhow::Result<Self> {
         Ok(Self {
             inner: Client::in_memory()?,
