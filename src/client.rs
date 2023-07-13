@@ -550,6 +550,7 @@ impl SyncClient {
 }
 
 /// Configuration for the database client
+#[derive(Debug)]
 pub struct Config {
     pub url: url::Url,
     pub auth_token: Option<String>,
