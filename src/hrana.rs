@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use crate::{BatchResult, ResultSet, Statement};
+use crate::{utils, BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
@@ -77,18 +77,18 @@ impl Client {
     where
         <T as TryInto<url::Url>>::Error: std::fmt::Display,
     {
-        let url: url::Url = url
+        let mut url: url::Url = url
             .try_into()
             .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
+        // remove the auth token from the URL so that it doesn't get logged anywhere
+        let token = utils::pop_query_param(&mut url, "authToken".to_string());
         let url_str = if url.scheme() == "libsql" {
             let new_url = format!("wss://{}", url.as_str().strip_prefix("libsql://").unwrap());
             url::Url::parse(&new_url).unwrap().to_string()
         } else {
             url.to_string()
         };
-        let mut params = url.query_pairs();
-        // Try a authToken=XXX parameter first, continue if not found
-        if let Some((_, token)) = params.find(|(param_key, _)| param_key == "authToken") {
+        if let Some(token) = token {
             Client::new(url_str, token).await
         } else {
             Client::new(url_str, "").await
