@@ -12,7 +12,7 @@ pub use statement::Statement;
 pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
-mod de;
+pub mod de;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 /// Represents a row returned from the database.

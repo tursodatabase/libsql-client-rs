@@ -8,7 +8,8 @@ use serde::{
 
 use crate::Row;
 
-fn from_row<'de, T: Deserialize<'de>>(row: &'de Row) -> anyhow::Result<T> {
+/// Deserialize from a [`Row`] into any type `T` that implements `Deserialize`.
+pub fn from_row<'de, T: Deserialize<'de>>(row: &'de Row) -> anyhow::Result<T> {
     let de = De { row };
     T::deserialize(de).map_err(Into::into)
 }
@@ -105,7 +106,6 @@ impl<'de> Deserializer<'de> for V<'de> {
                 let seq = SeqDeserializer::new(value.iter().cloned());
                 visitor.visit_seq(seq)
             }
-            _ => todo!(),
         }
     }
 
@@ -155,6 +155,12 @@ mod tests {
         );
         row.value_map.insert("ban".to_string(), Value::Null);
 
-        from_row::<Foo>(&row).unwrap();
+        let foo = from_row::<Foo>(&row).unwrap();
+
+        assert_eq!(&foo.bar, &"foo");
+        assert_eq!(foo.baz, 42);
+        assert!(foo.baf > 41.0);
+        assert_eq!(foo.bab, vec![6u8; 128]);
+        assert_eq!(foo.ban, ());
     }
 }
