@@ -12,6 +12,8 @@ pub use statement::Statement;
 pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
+mod de;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 /// Represents a row returned from the database.
 pub struct Row {
