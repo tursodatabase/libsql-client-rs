@@ -1,16 +1,26 @@
 use anyhow::Result;
-use libsql_client::{args, Client, ResultSet, Statement};
+use libsql_client::{args, de, Client, Statement};
 use rand::prelude::SliceRandom;
 
-fn result_to_string(query_result: ResultSet) -> Result<String> {
+#[derive(Debug, serde::Deserialize)]
+struct Counter {
+    country: String,
+    city: String,
+    value: i64,
+}
+
+fn result_to_string(counters: Vec<Counter>) -> Result<String> {
     let mut ret = String::new();
-    let ResultSet { columns, rows, .. } = query_result;
+
+    let columns = ["country", "city", "value"];
+
     for column in &columns {
         ret += &format!("| {:16} |", column);
     }
     ret += "\n| -------------------------------------------------------- |\n";
-    for row in rows {
-        for cell in row.values {
+    for row in counters {
+        let values = [row.country, row.city, row.value.to_string()];
+        for cell in values {
             ret += &format!("| {:16} |", cell);
         }
         ret += "\n";
@@ -54,7 +64,14 @@ async fn bump_counter(db: Client) -> Result<String> {
     ])
     .await?;
 
-    let counter_response = db.execute("SELECT * FROM counter").await?;
+    let counter_response = db
+        .execute("SELECT * FROM counter")
+        .await?
+        .rows
+        .iter()
+        .map(de::from_row)
+        .collect::<Result<Vec<Counter>, _>>()?;
+
     let scoreboard = result_to_string(counter_response)?;
     let html = format!("Scoreboard:\n{scoreboard}");
     Ok(html)
