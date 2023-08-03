@@ -11,6 +11,17 @@ use crate::Row;
 
 /// Deserialize from a [`Row`] into any type `T` that implements [`serde::Deserialize`].
 ///
+/// # Types
+///
+/// Structs must match their field name to the column name but the order does not matter.
+/// There is a limited set of Rust types which are supported and those are:
+///
+/// - String
+/// - Vec<u8>
+/// - i64
+/// - f64
+/// - ()
+///
 /// # Example
 ///
 /// ```no_run
@@ -147,6 +158,7 @@ mod tests {
     use super::*;
 
     #[derive(serde::Deserialize)]
+    #[allow(unused)]
     struct Foo {
         bar: String,
         baf: f64,
