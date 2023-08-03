@@ -166,6 +166,7 @@ pub mod spin;
 
 #[cfg(feature = "hrana_backend")]
 pub mod hrana;
+mod utils;
 
 /// A macro for passing parameters to statements without having to manually
 /// define their types.
