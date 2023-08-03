@@ -190,6 +190,5 @@ mod tests {
         assert!(foo.baf > 41.0);
         assert!(foo.baf2 > 42.0);
         assert_eq!(foo.bab, vec![6u8; 128]);
-        assert_eq!(foo.ban, ());
     }
 }
