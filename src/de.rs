@@ -1,3 +1,5 @@
+//! libsql deserialization utilities.
+
 use serde::de::{value::Error as DeError, Error};
 use std::collections::hash_map::Iter;
 
