@@ -1,3 +1,4 @@
+use serde::de::{value::Error as DeError, Error};
 use std::collections::hash_map::Iter;
 
 use hrana_client_proto::Value;
@@ -8,7 +9,33 @@ use serde::{
 
 use crate::Row;
 
-/// Deserialize from a [`Row`] into any type `T` that implements `Deserialize`.
+/// Deserialize from a [`Row`] into any type `T` that implements [`serde::Deserialize`].
+///
+/// # Example
+///
+/// ```no_run
+/// # async fn run(db: libsql_client::Client) -> anyhow::Result<()> {
+/// use libsql_client::de;
+///
+/// #[derive(Debug, serde::Deserialize)]
+/// struct User {
+///     name: String,
+///     email: String,
+///     age: i64,
+/// }
+///
+/// let users = db
+///     .execute("SELECT * FROM users")
+///     .await?
+///     .rows
+///     .iter()
+///     .map(de::from_row)
+///     .collect::<Result<Vec<User>, _>>()?;
+///
+/// println!("Users: {:?}", users);
+/// # Ok(())
+/// # }
+/// ```
 pub fn from_row<'de, T: Deserialize<'de>>(row: &'de Row) -> anyhow::Result<T> {
     let de = De { row };
     T::deserialize(de).map_err(Into::into)
@@ -25,27 +52,24 @@ impl<'de> Deserializer<'de> for De<'de> {
     where
         V: Visitor<'de>,
     {
-        // visitor.visit_map(RowV { row: &self.row })
-        todo!()
+        Err(DeError::custom("Expects a struct"))
     }
 
     fn deserialize_struct<V>(
         self,
-        name: &'static str,
-        fields: &'static [&'static str],
+        _name: &'static str,
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        println!("{}, {:?}", name, fields);
-
-        struct MapA<'a> {
+        struct RowMapAccess<'a> {
             iter: Iter<'a, String, Value>,
             value: Option<&'a Value>,
         }
 
-        impl<'de> MapAccess<'de> for MapA<'de> {
+        impl<'de> MapAccess<'de> for RowMapAccess<'de> {
             type Error = serde::de::value::Error;
 
             fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -74,7 +98,7 @@ impl<'de> Deserializer<'de> for De<'de> {
             }
         }
 
-        visitor.visit_map(MapA {
+        visitor.visit_map(RowMapAccess {
             iter: self.row.value_map.iter(),
             value: None,
         })
@@ -125,14 +149,15 @@ mod tests {
     #[derive(serde::Deserialize)]
     struct Foo {
         bar: String,
-        baz: i64,
         baf: f64,
+        baf2: f64,
+        baz: i64,
         bab: Vec<u8>,
         ban: (),
     }
 
     #[test]
-    fn smoke() {
+    fn struct_from_row() {
         let mut row = Row {
             values: Vec::new(),
             value_map: HashMap::new(),
@@ -147,6 +172,9 @@ mod tests {
             .insert("baz".to_string(), Value::Integer { value: 42 });
         row.value_map
             .insert("baf".to_string(), Value::Float { value: 42.0 });
+        row.value_map
+            .insert("baf2".to_string(), Value::Float { value: 43.0 });
+
         row.value_map.insert(
             "bab".to_string(),
             Value::Blob {
@@ -160,6 +188,7 @@ mod tests {
         assert_eq!(&foo.bar, &"foo");
         assert_eq!(foo.baz, 42);
         assert!(foo.baf > 41.0);
+        assert!(foo.baf2 > 42.0);
         assert_eq!(foo.bab, vec![6u8; 128]);
         assert_eq!(foo.ban, ());
     }
