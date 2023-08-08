@@ -12,6 +12,7 @@ pub use statement::Statement;
 pub mod proto;
 pub use proto::{BatchResult, Col, Value};
 
+#[cfg(feature = "mapping_names_to_values_in_rows")]
 pub mod de;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
