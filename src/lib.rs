@@ -151,6 +151,11 @@ impl std::convert::From<proto::StmtResult> for ResultSet {
 pub mod client;
 pub use client::{Client, Config, SyncClient};
 
+#[cfg(any(
+    feature = "reqwest_backend",
+    feature = "workers_backend",
+    feature = "spin_backend",
+))]
 pub mod http;
 pub mod transaction;
 pub use transaction::{SyncTransaction, Transaction};
