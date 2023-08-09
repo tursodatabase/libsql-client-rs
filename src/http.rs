@@ -31,6 +31,7 @@ pub enum InnerClient {
     Workers(crate::workers::HttpClient),
     #[cfg(feature = "spin_backend")]
     Spin(crate::spin::HttpClient),
+    Default,
 }
 
 impl InnerClient {
@@ -47,6 +48,7 @@ impl InnerClient {
             InnerClient::Workers(client) => client.send(url, auth, body).await,
             #[cfg(feature = "spin_backend")]
             InnerClient::Spin(client) => client.send(url, auth, body).await,
+            _ => panic!("Must enable atleast one feature"),
         }
     }
 }
