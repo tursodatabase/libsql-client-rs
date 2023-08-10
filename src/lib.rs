@@ -15,6 +15,9 @@ pub use proto::{BatchResult, Col, Value};
 #[cfg(feature = "mapping_names_to_values_in_rows")]
 pub mod de;
 
+#[cfg(feature = "workers_backend")]
+pub use worker;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 /// Represents a row returned from the database.
 pub struct Row {
