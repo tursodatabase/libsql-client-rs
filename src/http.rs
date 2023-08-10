@@ -48,7 +48,7 @@ impl InnerClient {
             InnerClient::Workers(client) => client.send(url, auth, body).await,
             #[cfg(feature = "spin_backend")]
             InnerClient::Spin(client) => client.send(url, auth, body).await,
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 }

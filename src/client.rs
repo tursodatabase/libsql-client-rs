@@ -66,7 +66,7 @@ impl Client {
             Self::Http(r) => r.raw_batch(stmts).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.raw_batch(stmts).await,
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 
@@ -188,7 +188,7 @@ impl Client {
             Self::Http(r) => r.execute(stmt).await,
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.execute(stmt).await,
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 
@@ -228,7 +228,7 @@ impl Client {
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.execute_in_transaction(tx_id, stmt).await,
 
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 
@@ -245,7 +245,7 @@ impl Client {
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.commit_transaction(tx_id).await,
 
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 
@@ -262,7 +262,7 @@ impl Client {
             #[cfg(feature = "hrana_backend")]
             Self::Hrana(h) => h.rollback_transaction(tx_id).await,
 
-            _ => panic!("Must enable atleast one feature"),
+            _ => panic!("Must enable at least one feature"),
         }
     }
 }
