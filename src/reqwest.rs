@@ -28,7 +28,9 @@ impl HttpClient {
             .send()
             .await?;
         if response.status() != reqwest::StatusCode::OK {
-            anyhow::bail!("{}", response.status());
+            let status = response.status();
+            let txt = response.text().await.unwrap_or_default();
+            anyhow::bail!("{status}: {txt}");
         }
         let resp: String = response.text().await?;
         let response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
