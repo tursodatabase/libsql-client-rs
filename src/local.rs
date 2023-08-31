@@ -2,40 +2,44 @@ use crate::{proto, proto::StmtResult, BatchResult, Col, ResultSet, Statement, Va
 use anyhow::Result;
 use sqlite3_parser::ast::{Cmd, Stmt};
 use sqlite3_parser::lexer::sql::Parser;
-use std::sync::{Arc, Mutex};
 
 use fallible_iterator::FallibleIterator;
-use rusqlite::types::Value as RusqliteValue;
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
-#[derive(Debug)]
 pub struct Client {
-    inner: Arc<Mutex<rusqlite::Connection>>,
+    db: libsql::Database,
+    conn: libsql::Connection,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("local::Client").finish()
+    }
 }
 
 struct ValueWrapper(Value);
 
-impl From<ValueWrapper> for RusqliteValue {
+impl From<ValueWrapper> for libsql::Value {
     fn from(v: ValueWrapper) -> Self {
         match v.0 {
-            Value::Null => RusqliteValue::Null,
-            Value::Integer { value: n } => RusqliteValue::Integer(n),
-            Value::Text { value: s } => RusqliteValue::Text(s),
-            Value::Float { value: d } => RusqliteValue::Real(d),
-            Value::Blob { value: b } => RusqliteValue::Blob(b),
+            Value::Null => libsql::Value::Null,
+            Value::Integer { value: n } => libsql::Value::Integer(n),
+            Value::Text { value: s } => libsql::Value::Text(s),
+            Value::Float { value: d } => libsql::Value::Real(d),
+            Value::Blob { value: b } => libsql::Value::Blob(b),
         }
     }
 }
 
-impl From<RusqliteValue> for ValueWrapper {
-    fn from(v: RusqliteValue) -> Self {
+impl From<libsql::Value> for ValueWrapper {
+    fn from(v: libsql::Value) -> Self {
         match v {
-            RusqliteValue::Null => ValueWrapper(Value::Null),
-            RusqliteValue::Integer(n) => ValueWrapper(Value::Integer { value: n }),
-            RusqliteValue::Text(s) => ValueWrapper(Value::Text { value: s }),
-            RusqliteValue::Real(d) => ValueWrapper(Value::Float { value: d }),
-            RusqliteValue::Blob(b) => ValueWrapper(Value::Blob { value: b }),
+            libsql::Value::Null => ValueWrapper(Value::Null),
+            libsql::Value::Integer(n) => ValueWrapper(Value::Integer { value: n }),
+            libsql::Value::Text(s) => ValueWrapper(Value::Text { value: s }),
+            libsql::Value::Real(d) => ValueWrapper(Value::Float { value: d }),
+            libsql::Value::Blob(b) => ValueWrapper(Value::Blob { value: b }),
         }
     }
 }
@@ -45,21 +49,17 @@ impl Client {
     ///
     /// # Arguments
     /// * `path` - path of the local database
-    pub fn new(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
-        Ok(Self {
-            inner: Arc::new(Mutex::new(
-                rusqlite::Connection::open(path).map_err(|e| anyhow::anyhow!("{e}"))?,
-            )),
-        })
+    pub fn new(path: impl Into<String>) -> anyhow::Result<Self> {
+        let db = libsql::Database::open(path.into())?;
+        let conn = db.connect()?;
+        Ok(Self { db, conn })
     }
 
     /// Establishes a new in-memory database and connects to it.
     pub fn in_memory() -> anyhow::Result<Self> {
-        Ok(Self {
-            inner: Arc::new(Mutex::new(
-                rusqlite::Connection::open(":memory:").map_err(|e| anyhow::anyhow!("{e}"))?,
-            )),
-        })
+        let db = libsql::Database::open(":memory:")?;
+        let conn = db.connect()?;
+        Ok(Self { db, conn })
     }
 
     pub fn from_env() -> anyhow::Result<Self> {
@@ -71,6 +71,10 @@ impl Client {
             None => anyhow::bail!("Local URL needs to start with file:///"),
         };
         Self::new(path)
+    }
+
+    pub async fn sync(&self) -> anyhow::Result<usize> {
+        self.db.sync().await.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     /// Executes a batch of SQL statements.
@@ -98,14 +102,14 @@ impl Client {
         for stmt in stmts {
             let stmt = stmt.into();
             let sql_string = &stmt.sql;
-            let params = rusqlite::params_from_iter(
-                stmt.args
-                    .into_iter()
-                    .map(ValueWrapper)
-                    .map(RusqliteValue::from),
-            );
-            let inner = self.inner.lock().unwrap();
-            let mut stmt = inner.prepare(sql_string)?;
+            let params: libsql::Params = stmt
+                .args
+                .into_iter()
+                .map(ValueWrapper)
+                .map(libsql::Value::from)
+                .collect::<Vec<_>>()
+                .into();
+            let stmt = self.conn.prepare(sql_string)?;
             let cols: Vec<Col> = stmt
                 .columns()
                 .into_iter()
@@ -114,7 +118,7 @@ impl Client {
                 })
                 .collect();
             let mut rows = Vec::new();
-            let mut input_rows = match stmt.query(params) {
+            let input_rows = match stmt.query(&params) {
                 Ok(rows) => rows,
                 Err(e) => {
                     step_results.push(None);
@@ -126,7 +130,7 @@ impl Client {
             };
             while let Some(row) = input_rows.next()? {
                 let cells = (0..cols.len())
-                    .map(|i| ValueWrapper::from(row.get::<usize, RusqliteValue>(i).unwrap()).0)
+                    .map(|i| ValueWrapper::from(row.get_value(i as i32).unwrap()).0)
                     .collect();
                 rows.push(cells)
             }
@@ -134,7 +138,7 @@ impl Client {
             let cmd = parser.last();
 
             let last_insert_rowid = match cmd {
-                Ok(Some(Cmd::Stmt(Stmt::Insert { .. }))) => Some(inner.last_insert_rowid()),
+                Ok(Some(Cmd::Stmt(Stmt::Insert { .. }))) => Some(self.conn.last_insert_rowid()),
                 _ => None,
             };
 
@@ -143,7 +147,7 @@ impl Client {
                     Cmd::Stmt(Stmt::Insert { .. })
                     | Cmd::Stmt(Stmt::Update { .. })
                     | Cmd::Stmt(Stmt::Delete { .. }),
-                )) => inner.changes(),
+                )) => self.conn.changes(),
                 _ => 0,
             };
 

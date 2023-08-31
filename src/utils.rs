@@ -37,7 +37,7 @@ mod tests {
     fn test_pop_query_param_not_existing() {
         let mut url = Url::parse("http://turso.io/?super=yes&sqld=yo").unwrap();
         let param = "ohno".to_string();
-        let result = pop_query_param(&mut url, param.clone());
+        let result = pop_query_param(&mut url, param);
         assert_eq!(result, None);
         assert_eq!(url.as_str(), "http://turso.io/?super=yes&sqld=yo");
     }
