@@ -188,7 +188,7 @@ impl Client {
             .client
             .open_stream()
             .await
-            .map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         stream
             .execute(stmt)
             .await

@@ -27,11 +27,11 @@ impl HttpClient {
             .header("Authorization", auth)
             .send()
             .await
-            .map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         if response.status() != reqwest::StatusCode::OK {
             let status = response.status();
             let txt = response.text().await.unwrap_or_default();
-            return Err(Error::FetchRowFailed(format!("{status}: {txt}")));
+            return Err(Error::ConnectionFailed(format!("{status}: {txt}")));
         }
         let resp: String = response
             .text()

@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.31.11"
+version = "0.32.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -27,13 +27,13 @@ serde = "1.0.159"
 tracing = "0.1.37"
 futures = "0.3.28"
 fallible-iterator = "0.2.0"
-libsql = { version = "0.1.6", optional = true }
+libsql = { version = "0.1.11", default-features = false }
 
 [features]
 default = ["local_backend", "hrana_backend", "reqwest_backend", "mapping_names_to_values_in_rows"]
 workers_backend = ["worker", "futures-util"]
 reqwest_backend = ["reqwest"]
-local_backend = ["libsql"]
+local_backend = ["libsql/core", "libsql/replication"]
 spin_backend = ["spin-sdk", "http", "bytes"]
 hrana_backend = ["hrana-client"]
 separate_url_for_queries = []

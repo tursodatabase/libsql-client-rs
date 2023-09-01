@@ -100,7 +100,7 @@ impl Client {
     ///     .raw_batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"]);
     /// # }
     /// ```
-    pub fn raw_batch(
+    pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
     ) -> Result<BatchResult> {
@@ -116,7 +116,7 @@ impl Client {
                 .map(libsql::Value::from)
                 .collect::<Vec<_>>()
                 .into();
-            let stmt = self.conn.prepare(sql_string)?;
+            let stmt = self.conn.prepare(sql_string).await?;
             let cols: Vec<Col> = stmt
                 .columns()
                 .into_iter()
@@ -125,7 +125,7 @@ impl Client {
                 })
                 .collect();
             let mut rows = Vec::new();
-            let input_rows = match stmt.query(&params) {
+            let mut input_rows = match stmt.query(&params).await {
                 Ok(rows) => rows,
                 Err(e) => {
                     step_results.push(None);
@@ -179,7 +179,7 @@ impl Client {
     ///
     /// # Arguments
     /// * `stmts` - SQL statements
-    pub fn batch(
+    pub async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
     ) -> Result<Vec<ResultSet>> {
@@ -187,7 +187,7 @@ impl Client {
             std::iter::once(Statement::new("BEGIN"))
                 .chain(stmts.into_iter().map(|s| s.into()))
                 .chain(std::iter::once(Statement::new("END"))),
-        )?;
+        ).await?;
         let step_error: Option<proto::Error> = batch_results
             .step_errors
             .into_iter()
@@ -214,8 +214,8 @@ impl Client {
 
     /// # Arguments
     /// * `stmt` - the SQL statement
-    pub fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
-        let results = self.raw_batch(std::iter::once(stmt))?;
+    pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        let results = self.raw_batch(std::iter::once(stmt)).await?;
         match (results.step_results.first(), results.step_errors.first()) {
             (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
             (Some(None), Some(Some(err))) => Err(Error::Misuse(err.message.clone())),
@@ -223,15 +223,15 @@ impl Client {
         }
     }
 
-    pub fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
-        self.execute(stmt)
+    pub async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        self.execute(stmt).await
     }
 
-    pub fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("COMMIT").map(|_| ())
+    pub async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("COMMIT").await.map(|_| ())
     }
 
-    pub fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("ROLLBACK").map(|_| ())
+    pub async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("ROLLBACK").await.map(|_| ())
     }
 }

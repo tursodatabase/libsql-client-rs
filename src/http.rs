@@ -121,7 +121,7 @@ impl Client {
                 pipeline::StreamRequest::Close,
             ],
         };
-        let body = serde_json::to_string(&msg).map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+        let body = serde_json::to_string(&msg).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let mut response: pipeline::ServerMsg = self
             .inner
             .send(self.url_for_queries.clone(), self.auth.clone(), body)
@@ -177,7 +177,7 @@ impl Client {
                 pipeline::StreamExecuteReq { stmt },
             )],
         };
-        let body = serde_json::to_string(&msg).map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+        let body = serde_json::to_string(&msg).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let url = cookie
             .base_url
             .unwrap_or_else(|| self.url_for_queries.clone());
@@ -205,13 +205,13 @@ impl Client {
         }
 
         if response.results.is_empty() {
-            return Err(Error::FetchRowFailed(format!(
+            return Err(Error::ConnectionFailed(format!(
                 "Unexpected empty response from server: {:?}",
                 response.results
             )));
         }
         if response.results.len() > 1 {
-            return Err(Error::FetchRowFailed(format!(
+            return Err(Error::ConnectionFailed(format!(
                 "Unexpected multiple responses from server: {:?}",
                 response.results
             )));
@@ -220,12 +220,12 @@ impl Client {
             pipeline::Response::Ok(pipeline::StreamResponseOk {
                 response: pipeline::StreamResponse::Execute(execute_result),
             }) => Ok(ResultSet::from(execute_result.result)),
-            pipeline::Response::Ok(_) => Err(Error::FetchRowFailed(format!(
+            pipeline::Response::Ok(_) => Err(Error::ConnectionFailed(format!(
                 "Unexpected response from server: {:?}",
                 response.results
             ))),
             pipeline::Response::Error(e) => {
-                Err(Error::FetchRowFailed(format!("Error from server: {:?}", e)))
+                Err(Error::ConnectionFailed(format!("Error from server: {e:?}")))
             }
         }
     }

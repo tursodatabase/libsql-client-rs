@@ -24,12 +24,12 @@ impl HttpClient {
             .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
 
         let response = spin_sdk::outbound_http::send_request(req)
-            .map_err(|e| Error::FetchRowFailed(e.to_string()));
+            .map_err(|e| Error::ConnectionFailed(e.to_string()));
         let resp: String = std::str::from_utf8(&response?.into_body().unwrap_or_default())
-            .map_err(|e| Error::FetchRowFailed(e.to_string()))?
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?
             .to_string();
         let response: pipeline::ServerMsg =
-            serde_json::from_str(&resp).map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+            serde_json::from_str(&resp).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         Ok(response)
     }
 }

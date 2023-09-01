@@ -45,7 +45,7 @@ impl HttpClient {
             .await
             .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let response: pipeline::ServerMsg =
-            serde_json::from_str(&resp).map_err(|e| Error::FetchRowFailed(e.to_string()))?;
+            serde_json::from_str(&resp).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         Ok(response)
     }
 }
