@@ -10,6 +10,7 @@ pub mod statement;
 pub use statement::Statement;
 
 pub mod proto;
+pub use libsql::{Error, Result};
 pub use proto::{BatchResult, Col, Value};
 
 #[cfg(feature = "mapping_names_to_values_in_rows")]
@@ -45,15 +46,12 @@ impl<'a> Row {
     /// let text : &str = row.try_get(1).unwrap();
     /// # }
     /// ```
-    pub fn try_get<V: TryFrom<&'a Value, Error = String>>(
-        &'a self,
-        index: usize,
-    ) -> anyhow::Result<V> {
+    pub fn try_get<V: TryFrom<&'a Value, Error = String>>(&'a self, index: usize) -> Result<V> {
         let val = self
             .values
             .get(index)
-            .ok_or(anyhow::anyhow!("out of bound index {}", index))?;
-        val.try_into().map_err(|x: String| anyhow::anyhow!(x))
+            .ok_or_else(|| Error::Misuse(format!("out of bound index {}", index)))?;
+        val.try_into().map_err(|x: String| Error::Misuse(x))
     }
 
     /// Try to get a value given a column name from this row and convert it to the desired type
@@ -75,15 +73,12 @@ impl<'a> Row {
     /// # }
     /// ```
     #[cfg(feature = "mapping_names_to_values_in_rows")]
-    pub fn try_column<V: TryFrom<&'a Value, Error = String>>(
-        &'a self,
-        col: &str,
-    ) -> anyhow::Result<V> {
+    pub fn try_column<V: TryFrom<&'a Value, Error = String>>(&'a self, col: &str) -> Result<V> {
         let val = self
             .value_map
             .get(col)
-            .ok_or(anyhow::anyhow!("column `{}` not present", col))?;
-        val.try_into().map_err(|x: String| anyhow::anyhow!(x))
+            .ok_or_else(|| Error::Misuse(format!("column `{}` not present", col)))?;
+        val.try_into().map_err(|x: String| Error::Misuse(x))
     }
 }
 

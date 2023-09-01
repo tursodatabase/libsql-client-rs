@@ -1,5 +1,5 @@
 use crate::client::Config;
-use anyhow::Result;
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -37,7 +37,9 @@ impl Client {
         let token = if token.is_empty() { None } else { Some(token) };
         let url = url.into();
 
-        let (client, client_future) = hrana_client::Client::connect(&url, token.clone()).await?;
+        let (client, client_future) = hrana_client::Client::connect(&url, token.clone())
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
 
         Ok(Self {
             url,
@@ -49,8 +51,9 @@ impl Client {
     }
 
     pub async fn reconnect(&mut self) -> Result<()> {
-        let (client, client_future) =
-            hrana_client::Client::connect(&self.url, self.token.clone()).await?;
+        let (client, client_future) = hrana_client::Client::connect(&self.url, self.token.clone())
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         self.client = client;
         self.client_future = client_future;
         Ok(())
@@ -64,7 +67,7 @@ impl Client {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> anyhow::Result<()> {
+    /// # async fn f() -> Result<()> {
     /// # use libsql_client::hrana::Client;
     /// use url::Url;
     ///
@@ -73,13 +76,11 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn from_url<T: TryInto<url::Url>>(url: T) -> anyhow::Result<Client>
+    pub async fn from_url<T: TryInto<url::Url>>(url: T) -> Result<Client>
     where
         <T as TryInto<url::Url>>::Error: std::fmt::Display,
     {
-        let mut url: url::Url = url
-            .try_into()
-            .map_err(|e| anyhow::anyhow!(format!("{e}")))?;
+        let mut url: url::Url = url.try_into().map_err(|e| Error::Misuse(format!("{e}")))?;
         // remove the auth token from the URL so that it doesn't get logged anywhere
         let token = utils::pop_query_param(&mut url, "authToken".to_string());
         let url_str = if url.scheme() == "libsql" {
@@ -101,8 +102,13 @@ impl Client {
     }
 
     pub async fn shutdown(self) -> Result<()> {
-        self.client.shutdown().await?;
-        self.client_future.await?;
+        self.client
+            .shutdown()
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
+        self.client_future
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         Ok(())
     }
 
@@ -119,7 +125,12 @@ impl Client {
         // Pessimistic path - let's drop the mutex, create the stream and try to reinsert it.
         // Another way out of this situation is an async mutex, but I don't want to rely on Tokio or any other specific runtime
         // unless absolutely necessary.
-        let stream = Arc::new(self.client.open_stream().await?);
+        let stream = Arc::new(
+            self.client
+                .open_stream()
+                .await
+                .map_err(|e| Error::ConnectionFailed(e.to_string()))?,
+        );
         tracing::trace!("Created new stream");
         let mut streams = self.streams_for_transactions.write().unwrap();
         if let std::collections::hash_map::Entry::Vacant(e) = streams.entry(tx_id) {
@@ -148,7 +159,7 @@ impl Client {
     pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
+    ) -> Result<BatchResult> {
         let mut batch = hrana_client::proto::Batch::new();
         for stmt in stmts.into_iter() {
             let stmt: Statement = stmt.into();
@@ -159,22 +170,30 @@ impl Client {
             batch.step(None, hrana_stmt);
         }
 
-        let stream = self.client.open_stream().await?;
+        let stream = self
+            .client
+            .open_stream()
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         stream
             .execute_batch(batch)
             .await
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 
     pub async fn execute(&self, stmt: impl Into<Statement>) -> Result<ResultSet> {
         let stmt = Self::into_hrana(stmt.into());
 
-        let stream = self.client.open_stream().await?;
+        let stream = self
+            .client
+            .open_stream()
+            .await
+            .map_err(|e| Error::FetchRowFailed(e.to_string()))?;
         stream
             .execute(stmt)
             .await
             .map(ResultSet::from)
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 
     pub async fn execute_in_transaction(&self, tx_id: u64, stmt: Statement) -> Result<ResultSet> {
@@ -185,7 +204,7 @@ impl Client {
             .execute(stmt)
             .await
             .map(ResultSet::from)
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 
     pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
@@ -196,7 +215,7 @@ impl Client {
             .execute(Self::into_hrana(Statement::from("COMMIT")))
             .await
             .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 
     pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
@@ -207,6 +226,6 @@ impl Client {
             .execute(Self::into_hrana(Statement::from("ROLLBACK")))
             .await
             .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 }

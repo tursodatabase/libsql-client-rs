@@ -1,7 +1,7 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
+use crate::Result;
 use crate::{Client, ResultSet, Statement, SyncClient};
-use anyhow::Result;
 
 pub struct Transaction<'a> {
     pub(crate) id: u64,

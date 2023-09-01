@@ -49,9 +49,9 @@ use crate::Row;
 /// # Ok(())
 /// # }
 /// ```
-pub fn from_row<'de, T: Deserialize<'de>>(row: &'de Row) -> anyhow::Result<T> {
+pub fn from_row<'de, T: Deserialize<'de>>(row: &'de Row) -> crate::Result<T> {
     let de = De { row };
-    T::deserialize(de).map_err(Into::into)
+    T::deserialize(de).map_err(|e| crate::Error::Misuse(e.to_string()))
 }
 
 struct De<'de> {
