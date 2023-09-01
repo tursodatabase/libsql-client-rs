@@ -367,17 +367,17 @@ impl Client {
     }
 
     #[cfg(feature = "workers_backend")]
-    pub fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
+    pub fn from_workers_env(env: &worker::Env) -> Result<Client> {
         let url = env
             .secret("LIBSQL_CLIENT_URL")
-            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .map_err(|e| Error::Misuse(e.to_string()))?
             .to_string();
         let token = env
             .secret("LIBSQL_CLIENT_TOKEN")
-            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .map_err(|e| Error::Misuse(e.to_string()))?
             .to_string();
         let config = Config {
-            url: url::Url::parse(&url)?,
+            url: url::Url::parse(&url).map_err(|e| Error::Misuse(e.to_string()))?,
             auth_token: Some(token),
         };
         let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
