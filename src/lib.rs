@@ -51,7 +51,7 @@ impl<'a> Row {
             .values
             .get(index)
             .ok_or_else(|| Error::Misuse(format!("out of bound index {}", index)))?;
-        val.try_into().map_err(|x: String| Error::Misuse(x))
+        val.try_into().map_err(Error::Misuse)
     }
 
     /// Try to get a value given a column name from this row and convert it to the desired type
@@ -78,7 +78,7 @@ impl<'a> Row {
             .value_map
             .get(col)
             .ok_or_else(|| Error::Misuse(format!("column `{}` not present", col)))?;
-        val.try_into().map_err(|x: String| Error::Misuse(x))
+        val.try_into().map_err(Error::Misuse)
     }
 }
 
