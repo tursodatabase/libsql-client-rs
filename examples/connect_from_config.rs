@@ -1,4 +1,4 @@
-use anyhow::Result;
+use libsql_client::Result;
 use libsql_client::{args, Client, ResultSet, Statement};
 use rand::prelude::SliceRandom;
 
