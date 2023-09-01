@@ -572,7 +572,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> anyhow::Result<()> {
+    /// # async fn f() -> libsql_client::Result<()> {
     /// # use libsql_client::Config;
     /// let config = Config::new("file:////tmp/example.db")?;
     /// let db = libsql_client::Client::from_config(config).await.unwrap();
@@ -595,7 +595,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> anyhow::Result<()> {
+    /// # async fn f() -> libsql_client::Result<()> {
     /// # use libsql_client::Config;
     /// let config = Config::new("https://example.com/db")?.with_auth_token("secret");
     /// let db = libsql_client::Client::from_config(config).await.unwrap();

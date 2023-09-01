@@ -180,7 +180,7 @@ mod utils;
 /// # Example
 ///
 /// ```rust,no_run
-///   # async fn f() -> anyhow::Result<()> {
+///   # async fn f() -> libsql_client::Result<()> {
 ///   # use crate::libsql_client::{Statement, args};
 ///   let db = libsql_client::Client::from_env().await?;
 ///   db.execute(

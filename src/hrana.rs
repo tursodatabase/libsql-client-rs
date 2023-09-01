@@ -67,7 +67,7 @@ impl Client {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> Result<()> {
+    /// # async fn f() -> libsql_client::Result<()> {
     /// # use libsql_client::hrana::Client;
     /// use url::Url;
     ///

@@ -27,7 +27,7 @@ use crate::Row;
 /// # Example
 ///
 /// ```no_run
-/// # async fn run(db: libsql_client::Client) -> anyhow::Result<()> {
+/// # async fn run(db: libsql_client::Client) -> libsql_client::Result<()> {
 /// use libsql_client::de;
 ///
 /// #[derive(Debug, serde::Deserialize)]
