@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::{Error, Result};
 
 use crate::proto::pipeline;
 
@@ -26,14 +26,19 @@ impl HttpClient {
             .body(body)
             .header("Authorization", auth)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         if response.status() != reqwest::StatusCode::OK {
             let status = response.status();
             let txt = response.text().await.unwrap_or_default();
-            anyhow::bail!("{status}: {txt}");
+            return Err(Error::ConnectionFailed(format!("{status}: {txt}")));
         }
-        let resp: String = response.text().await?;
-        let response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+        let resp: String = response
+            .text()
+            .await
+            .map_err(|e| Error::Misuse(e.to_string()))?;
+        let response: pipeline::ServerMsg =
+            serde_json::from_str(&resp).map_err(|e| Error::Misuse(e.to_string()))?;
         Ok(response)
     }
 }

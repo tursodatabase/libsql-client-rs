@@ -1,4 +1,4 @@
-use anyhow::Result;
+use libsql_client::Result;
 use libsql_client::{args, de, Client, Statement};
 use rand::prelude::SliceRandom;
 
@@ -70,7 +70,7 @@ async fn bump_counter(db: Client) -> Result<String> {
         .rows
         .iter()
         .map(de::from_row)
-        .collect::<Result<Vec<Counter>, _>>()?;
+        .collect::<Result<Vec<Counter>>>()?;
 
     let scoreboard = result_to_string(counter_response)?;
     let html = format!("Scoreboard:\n{scoreboard}");

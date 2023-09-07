@@ -1,5 +1,5 @@
 use crate::client::Config;
-use anyhow::Result;
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -78,7 +78,7 @@ impl Client {
     }
 
     /// Establishes  a database client from a `Config` object
-    pub fn from_config(inner: InnerClient, config: Config) -> anyhow::Result<Self> {
+    pub fn from_config(inner: InnerClient, config: Config) -> Result<Self> {
         Ok(Self::new(
             inner,
             config.url,
@@ -86,9 +86,9 @@ impl Client {
         ))
     }
 
-    pub fn from_env(inner: InnerClient) -> anyhow::Result<Client> {
+    pub fn from_env(inner: InnerClient) -> Result<Client> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
-            anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
+            Error::Misuse("LIBSQL_CLIENT_URL variable should point to your sqld database".into())
         })?;
 
         let token = std::env::var("LIBSQL_CLIENT_TOKEN").unwrap_or_default();
@@ -108,7 +108,7 @@ impl Client {
     pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
+    ) -> Result<BatchResult> {
         let mut batch = crate::proto::Batch::new();
         for stmt in stmts.into_iter() {
             batch.step(None, Self::into_hrana(stmt.into()));
@@ -121,34 +121,35 @@ impl Client {
                 pipeline::StreamRequest::Close,
             ],
         };
-        let body = serde_json::to_string(&msg)?;
+        let body = serde_json::to_string(&msg).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let mut response: pipeline::ServerMsg = self
             .inner
             .send(self.url_for_queries.clone(), self.auth.clone(), body)
             .await?;
 
         if response.results.is_empty() {
-            anyhow::bail!(
+            return Err(Error::Misuse(format!(
                 "Unexpected empty response from server: {:?}",
                 response.results
-            );
+            )));
         }
         if response.results.len() > 2 {
             // One with actual results, one closing the stream
-            anyhow::bail!(
+            return Err(Error::Misuse(format!(
                 "Unexpected multiple responses from server: {:?}",
                 response.results
-            );
+            )));
         }
         match response.results.swap_remove(0) {
             pipeline::Response::Ok(pipeline::StreamResponseOk {
                 response: pipeline::StreamResponse::Batch(batch_result),
             }) => Ok(batch_result.result),
-            pipeline::Response::Ok(_) => {
-                anyhow::bail!("Unexpected response from server: {:?}", response.results)
-            }
+            pipeline::Response::Ok(_) => Err(Error::Misuse(format!(
+                "Unexpected response from server: {:?}",
+                response.results
+            ))),
             pipeline::Response::Error(e) => {
-                anyhow::bail!("Error from server: {:?}", e)
+                Err(Error::Misuse(format!("Error from server: {:?}", e)))
             }
         }
     }
@@ -176,7 +177,7 @@ impl Client {
                 pipeline::StreamExecuteReq { stmt },
             )],
         };
-        let body = serde_json::to_string(&msg)?;
+        let body = serde_json::to_string(&msg).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let url = cookie
             .base_url
             .unwrap_or_else(|| self.url_for_queries.clone());
@@ -195,31 +196,36 @@ impl Client {
                         },
                     );
                 }
-                None => anyhow::bail!("Stream closed: server returned empty baton"),
+                None => {
+                    return Err(Error::ConnectionFailed(
+                        "Stream closed: server returned empty baton".into(),
+                    ))
+                }
             }
         }
 
         if response.results.is_empty() {
-            anyhow::bail!(
+            return Err(Error::ConnectionFailed(format!(
                 "Unexpected empty response from server: {:?}",
                 response.results
-            );
+            )));
         }
         if response.results.len() > 1 {
-            anyhow::bail!(
+            return Err(Error::ConnectionFailed(format!(
                 "Unexpected multiple responses from server: {:?}",
                 response.results
-            );
+            )));
         }
         match response.results.swap_remove(0) {
             pipeline::Response::Ok(pipeline::StreamResponseOk {
                 response: pipeline::StreamResponse::Execute(execute_result),
             }) => Ok(ResultSet::from(execute_result.result)),
-            pipeline::Response::Ok(_) => {
-                anyhow::bail!("Unexpected response from server: {:?}", response.results)
-            }
+            pipeline::Response::Ok(_) => Err(Error::ConnectionFailed(format!(
+                "Unexpected response from server: {:?}",
+                response.results
+            ))),
             pipeline::Response::Error(e) => {
-                anyhow::bail!("Error from server: {:?}", e)
+                Err(Error::ConnectionFailed(format!("Error from server: {e:?}")))
             }
         }
     }
@@ -239,7 +245,8 @@ impl Client {
         let url = cookie
             .base_url
             .unwrap_or_else(|| self.url_for_queries.clone());
-        let body = serde_json::to_string(&msg)?;
+        let body =
+            serde_json::to_string(&msg).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         self.inner.send(url, self.auth.clone(), body).await.ok();
         self.cookies.write().unwrap().remove(&tx_id);
         Ok(())

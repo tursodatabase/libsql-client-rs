@@ -1,5 +1,5 @@
 use crate::{proto, proto::StmtResult, BatchResult, Col, ResultSet, Statement, Value};
-use anyhow::Result;
+use crate::{Error, Result};
 use sqlite3_parser::ast::{Cmd, Stmt};
 use sqlite3_parser::lexer::sql::Parser;
 
@@ -49,32 +49,39 @@ impl Client {
     ///
     /// # Arguments
     /// * `path` - path of the local database
-    pub fn new(path: impl Into<String>) -> anyhow::Result<Self> {
+    pub fn new(path: impl Into<String>) -> Result<Self> {
         let db = libsql::Database::open(path.into())?;
         let conn = db.connect()?;
         Ok(Self { db, conn })
     }
 
     /// Establishes a new in-memory database and connects to it.
-    pub fn in_memory() -> anyhow::Result<Self> {
+    pub fn in_memory() -> Result<Self> {
         let db = libsql::Database::open(":memory:")?;
         let conn = db.connect()?;
         Ok(Self { db, conn })
     }
 
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub fn from_env() -> Result<Self> {
         let path = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
-            anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
+            Error::Misuse("LIBSQL_CLIENT_URL variable should point to your sqld database".into())
         })?;
         let path = match path.strip_prefix("file:///") {
             Some(path) => path,
-            None => anyhow::bail!("Local URL needs to start with file:///"),
+            None => {
+                return Err(Error::Misuse(
+                    "Local URL needs to start with file:///".into(),
+                ))
+            }
         };
         Self::new(path)
     }
 
-    pub async fn sync(&self) -> anyhow::Result<usize> {
-        self.db.sync().await.map_err(|e| anyhow::anyhow!("{}", e))
+    pub async fn sync(&self) -> Result<usize> {
+        self.db
+            .sync()
+            .await
+            .map_err(|e| Error::Misuse(e.to_string()))
     }
 
     /// Executes a batch of SQL statements.
@@ -93,10 +100,10 @@ impl Client {
     ///     .raw_batch(["CREATE TABLE t(id)", "INSERT INTO t VALUES (42)"]);
     /// # }
     /// ```
-    pub fn raw_batch(
+    pub async fn raw_batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement>>,
-    ) -> anyhow::Result<BatchResult> {
+    ) -> Result<BatchResult> {
         let mut step_results = vec![];
         let mut step_errors = vec![];
         for stmt in stmts {
@@ -109,7 +116,7 @@ impl Client {
                 .map(libsql::Value::from)
                 .collect::<Vec<_>>()
                 .into();
-            let stmt = self.conn.prepare(sql_string)?;
+            let stmt = self.conn.prepare(sql_string).await?;
             let cols: Vec<Col> = stmt
                 .columns()
                 .into_iter()
@@ -118,7 +125,7 @@ impl Client {
                 })
                 .collect();
             let mut rows = Vec::new();
-            let input_rows = match stmt.query(&params) {
+            let mut input_rows = match stmt.query(&params).await {
                 Ok(rows) => rows,
                 Err(e) => {
                     step_results.push(None);
@@ -172,7 +179,7 @@ impl Client {
     ///
     /// # Arguments
     /// * `stmts` - SQL statements
-    pub fn batch(
+    pub async fn batch(
         &self,
         stmts: impl IntoIterator<Item = impl Into<Statement> + Send> + Send,
     ) -> Result<Vec<ResultSet>> {
@@ -180,7 +187,7 @@ impl Client {
             std::iter::once(Statement::new("BEGIN"))
                 .chain(stmts.into_iter().map(|s| s.into()))
                 .chain(std::iter::once(Statement::new("END"))),
-        )?;
+        ).await?;
         let step_error: Option<proto::Error> = batch_results
             .step_errors
             .into_iter()
@@ -188,7 +195,7 @@ impl Client {
             .find(|e| e.is_some())
             .flatten();
         if let Some(error) = step_error {
-            return Err(anyhow::anyhow!(error.message));
+            return Err(Error::Misuse(error.message));
         }
         let mut step_results: Vec<Result<ResultSet>> = batch_results
             .step_results
@@ -197,7 +204,7 @@ impl Client {
             .map(|maybe_rs| {
                 maybe_rs
                     .map(ResultSet::from)
-                    .ok_or_else(|| anyhow::anyhow!("Unexpected missing result set"))
+                    .ok_or_else(|| Error::Misuse("Unexpected missing result set".into()))
             })
             .collect();
         step_results.pop(); // END is not counted in the result, it's implicitly ignored
@@ -207,24 +214,24 @@ impl Client {
 
     /// # Arguments
     /// * `stmt` - the SQL statement
-    pub fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
-        let results = self.raw_batch(std::iter::once(stmt))?;
+    pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
+        let results = self.raw_batch(std::iter::once(stmt)).await?;
         match (results.step_results.first(), results.step_errors.first()) {
             (Some(Some(result)), Some(None)) => Ok(ResultSet::from(result.clone())),
-            (Some(None), Some(Some(err))) => Err(anyhow::anyhow!(err.message.clone())),
+            (Some(None), Some(Some(err))) => Err(Error::Misuse(err.message.clone())),
             _ => unreachable!(),
         }
     }
 
-    pub fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
-        self.execute(stmt)
+    pub async fn execute_in_transaction(&self, _tx_id: u64, stmt: Statement) -> Result<ResultSet> {
+        self.execute(stmt).await
     }
 
-    pub fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("COMMIT").map(|_| ())
+    pub async fn commit_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("COMMIT").await.map(|_| ())
     }
 
-    pub fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
-        self.execute("ROLLBACK").map(|_| ())
+    pub async fn rollback_transaction(&self, _tx_id: u64) -> Result<()> {
+        self.execute("ROLLBACK").await.map(|_| ())
     }
 }

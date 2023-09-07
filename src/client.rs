@@ -1,7 +1,7 @@
 //! [Client] is the main structure to interact with the database.
-use anyhow::Result;
-
-use crate::{proto, BatchResult, ResultSet, Statement, SyncTransaction, Transaction};
+use crate::{
+    proto, BatchResult, Error, Result, ResultSet, Statement, SyncTransaction, Transaction,
+};
 
 static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -57,7 +57,7 @@ impl Client {
     ) -> Result<BatchResult> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.raw_batch(stmts),
+            Self::Local(l) => l.raw_batch(stmts).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -111,7 +111,7 @@ impl Client {
             .find(|e| e.is_some())
             .flatten();
         if let Some(error) = step_error {
-            return Err(anyhow::anyhow!(error.message));
+            return Err(Error::Misuse(error.message));
         }
         let mut step_results: Vec<Result<ResultSet>> = batch_results
             .step_results
@@ -120,7 +120,7 @@ impl Client {
             .map(|maybe_rs| {
                 maybe_rs
                     .map(ResultSet::from)
-                    .ok_or_else(|| anyhow::anyhow!("Unexpected missing result set"))
+                    .ok_or_else(|| Error::Misuse("Unexpected missing result set".into()))
             })
             .collect();
         step_results.pop(); // END is not counted in the result, it's implicitly ignored
@@ -179,7 +179,7 @@ impl Client {
     pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute(stmt),
+            Self::Local(l) => l.execute(stmt).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -218,7 +218,7 @@ impl Client {
     ) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
+            Self::Local(l) => l.execute_in_transaction(tx_id, stmt).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -235,7 +235,7 @@ impl Client {
     pub(crate) async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.commit_transaction(tx_id),
+            Self::Local(l) => l.commit_transaction(tx_id).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -252,7 +252,7 @@ impl Client {
     pub(crate) async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.rollback_transaction(tx_id),
+            Self::Local(l) => l.rollback_transaction(tx_id).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -279,7 +279,7 @@ impl Client {
     /// # }
     /// ```
     #[cfg(feature = "local_backend")]
-    pub fn in_memory() -> anyhow::Result<Client> {
+    pub fn in_memory() -> Result<Client> {
         Ok(Client::Local(crate::local::Client::in_memory()?))
     }
 
@@ -298,7 +298,7 @@ impl Client {
     /// # }
     /// ```
     #[allow(unreachable_patterns)]
-    pub async fn from_config<'a>(mut config: Config) -> anyhow::Result<Client> {
+    pub async fn from_config<'a>(mut config: Config) -> Result<Client> {
         config.url = if config.url.scheme() == "libsql" {
             // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
             // Safe to unwrap, because we know that the scheme is libsql
@@ -331,7 +331,7 @@ impl Client {
                 let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
                 Client::Http(crate::http::Client::from_config(inner, config)?)
             },
-            _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
+            _ => return Err(Error::Misuse(format!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"))),
         })
     }
 
@@ -352,30 +352,32 @@ impl Client {
     /// let db = libsql_client::Client::from_env().await.unwrap();
     /// # }
     /// ```
-    pub async fn from_env() -> anyhow::Result<Client> {
+    pub async fn from_env() -> Result<Client> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
-            anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database")
+            Error::Misuse(
+                "LIBSQL_CLIENT_URL variable should point to your libSQL/sqld database".into(),
+            )
         })?;
         let auth_token = std::env::var("LIBSQL_CLIENT_TOKEN").ok();
         Self::from_config(Config {
-            url: url::Url::parse(&url)?,
+            url: url::Url::parse(&url).map_err(|e| Error::Misuse(e.to_string()))?,
             auth_token,
         })
         .await
     }
 
     #[cfg(feature = "workers_backend")]
-    pub fn from_workers_env(env: &worker::Env) -> anyhow::Result<Client> {
+    pub fn from_workers_env(env: &worker::Env) -> Result<Client> {
         let url = env
             .secret("LIBSQL_CLIENT_URL")
-            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .map_err(|e| Error::Misuse(e.to_string()))?
             .to_string();
         let token = env
             .secret("LIBSQL_CLIENT_TOKEN")
-            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .map_err(|e| Error::Misuse(e.to_string()))?
             .to_string();
         let config = Config {
-            url: url::Url::parse(&url)?,
+            url: url::Url::parse(&url).map_err(|e| Error::Misuse(e.to_string()))?,
             auth_token: Some(token),
         };
         let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
@@ -398,7 +400,7 @@ impl SyncClient {
     /// # }
     /// ```
     #[cfg(feature = "local_backend")]
-    pub fn in_memory() -> anyhow::Result<Self> {
+    pub fn in_memory() -> Result<Self> {
         Ok(Self {
             inner: Client::in_memory()?,
         })
@@ -570,7 +572,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> anyhow::Result<()> {
+    /// # async fn f() -> libsql_client::Result<()> {
     /// # use libsql_client::Config;
     /// let config = Config::new("file:////tmp/example.db")?;
     /// let db = libsql_client::Client::from_config(config).await.unwrap();
@@ -584,7 +586,7 @@ impl Config {
         Ok(Self {
             url: url
                 .try_into()
-                .map_err(|e| anyhow::anyhow!("Failed to parse url: {}", e))?,
+                .map_err(|e| Error::Misuse(format!("Failed to parse url: {e}")))?,
             auth_token: None,
         })
     }
@@ -593,7 +595,7 @@ impl Config {
     /// # Examples
     ///
     /// ```
-    /// # async fn f() -> anyhow::Result<()> {
+    /// # async fn f() -> libsql_client::Result<()> {
     /// # use libsql_client::Config;
     /// let config = Config::new("https://example.com/db")?.with_auth_token("secret");
     /// let db = libsql_client::Client::from_config(config).await.unwrap();

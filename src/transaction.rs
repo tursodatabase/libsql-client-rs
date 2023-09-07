@@ -1,7 +1,7 @@
 //! `Transaction` is a structure representing an interactive transaction.
 
+use crate::Result;
 use crate::{Client, ResultSet, Statement, SyncClient};
-use anyhow::Result;
 
 pub struct Transaction<'a> {
     pub(crate) id: u64,
@@ -20,7 +20,7 @@ impl<'a> Transaction<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    ///   # async fn f() -> anyhow::Result<()> {
+    ///   # async fn f() -> libsql_client::Result<()> {
     ///   # use crate::libsql_client::{Statement, args};
     ///   let mut db = libsql_client::Client::from_env().await?;
     ///   let tx = db.transaction().await?;
@@ -66,7 +66,7 @@ impl<'a> SyncTransaction<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    ///   # fn f() -> anyhow::Result<()> {
+    ///   # fn f() -> libsql_client::Result<()> {
     ///   # use crate::libsql_client::{Statement, args};
     ///   let mut db = libsql_client::SyncClient::from_env()?;
     ///   let tx = db.transaction()?;

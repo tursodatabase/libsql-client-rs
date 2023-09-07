@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::{Error, Result};
 
 use crate::proto::pipeline;
 
@@ -20,12 +20,16 @@ impl HttpClient {
             .uri(&url)
             .header("Authorization", &auth)
             .method("POST")
-            .body(Some(bytes::Bytes::copy_from_slice(body.as_bytes())))?;
+            .body(Some(bytes::Bytes::copy_from_slice(body.as_bytes())))
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
 
-        let response = spin_sdk::outbound_http::send_request(req);
-        let resp: String =
-            std::str::from_utf8(&response?.into_body().unwrap_or_default())?.to_string();
-        let response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+        let response = spin_sdk::outbound_http::send_request(req)
+            .map_err(|e| Error::ConnectionFailed(e.to_string()));
+        let resp: String = std::str::from_utf8(&response?.into_body().unwrap_or_default())
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?
+            .to_string();
+        let response: pipeline::ServerMsg =
+            serde_json::from_str(&resp).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         Ok(response)
     }
 }

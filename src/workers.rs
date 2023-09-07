@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::{Error, Result};
 use worker::*;
 
 use crate::proto::pipeline;
@@ -27,18 +27,25 @@ impl HttpClient {
             method: Method::Post,
             redirect: RequestRedirect::Follow,
         };
-        let req =
-            Request::new_with_init(&url, &request_init).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let req = Request::new_with_init(&url, &request_init)
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         let mut response = Fetch::Request(req)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         if response.status_code() != 200 {
-            anyhow::bail!("Status {}", response.status_code());
+            return Err(Error::ConnectionFailed(format!(
+                "Status {}",
+                response.status_code()
+            )));
         }
 
-        let resp: String = response.text().await.map_err(|e| anyhow::anyhow!("{e}"))?;
-        let response: pipeline::ServerMsg = serde_json::from_str(&resp)?;
+        let resp: String = response
+            .text()
+            .await
+            .map_err(|e| Error::ConnectionFailed(e.to_string()))?;
+        let response: pipeline::ServerMsg =
+            serde_json::from_str(&resp).map_err(|e| Error::ConnectionFailed(e.to_string()))?;
         Ok(response)
     }
 }
