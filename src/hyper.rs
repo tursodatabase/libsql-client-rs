@@ -1,25 +1,16 @@
 use anyhow::Result;
-use hyper::{client::HttpConnector, Request, Body, StatusCode, body::{to_bytes, HttpBody}};
+use hyper::{Request, Body, StatusCode, Uri, };
+use hyper::body::{to_bytes, HttpBody};
+use hyper::client::{HttpConnector, connect::Connection};
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tower::Service;
 
 use crate::proto::pipeline;
 
-pub(crate) type HttpsConnector<H = HttpConnector> = hyper_rustls::HttpsConnector<H>;
-
 #[derive(Clone, Debug)]
-pub struct HttpClient<C = HttpsConnector> {
-    inner: hyper::client::Client<C>,
-}
-
-impl HttpClient {
-    pub fn new() -> Self {
-        let http_connector = HttpConnector::new();
-        let https_connector = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_native_roots()
-            .https_or_http()
-            .enable_http2()
-            .wrap_connector(http_connector);
-        Self::with_connector(https_connector)
-    }
+pub struct HttpClient<C = HttpConnector> {
+    inner: hyper::client::Client<HttpsConnector<C>>,
 }
 
 pub async fn to_text<T>(body: T) -> anyhow::Result<String>
@@ -31,15 +22,32 @@ where
     Ok(String::from_utf8(bytes.to_vec())?)
 }
 
+impl HttpClient {
+    pub fn new() -> Self {
+        let connector = HttpConnector::new();
+        Self::with_connector(connector)
+    }
+}
+
 impl<C> HttpClient<C>
 where
-    C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: Connection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
+    /// Creates an HttpClient using the provided connector.
     pub fn with_connector(connector: C) -> Self {
-        let inner = hyper::client::Client::builder().build(connector);
+        let connector = HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_or_http()
+            .enable_http2()
+            .wrap_connector(connector);
+
+        let builder = hyper::client::Client::builder();
+        let inner = builder.build(connector);
 
         Self { inner }
-
     }
 
     pub async fn send(

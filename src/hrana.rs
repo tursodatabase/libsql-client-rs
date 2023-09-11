@@ -1,5 +1,10 @@
 use crate::client::Config;
 use anyhow::Result;
+use hyper::Uri;
+use hyper::client::HttpConnector;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncWrite;
+use tower::Service;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -8,13 +13,14 @@ use crate::{utils, BatchResult, ResultSet, Statement};
 
 /// Database client. This is the main structure used to
 /// communicate with the database.
-pub struct Client {
+pub struct Client<C = HttpConnector> {
     url: String,
     token: Option<String>,
 
     client: hrana_client::Client,
     client_future: hrana_client::ConnFut,
     streams_for_transactions: RwLock<HashMap<u64, Arc<hrana_client::Stream>>>,
+    connector: C,
 }
 
 impl std::fmt::Debug for Client {
@@ -26,18 +32,22 @@ impl std::fmt::Debug for Client {
     }
 }
 
-impl Client {
-    /// Creates a database client with JWT authentication.
-    ///
-    /// # Arguments
-    /// * `url` - URL of the database endpoint
-    /// * `token` - auth token
-    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Result<Self> {
+impl<C> Client<C>
+where 
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: hyper::client::connect::Connection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: std::error::Error + Sync + Send + 'static,
+{
+    /// Same as `new`, but uses `connector` to create connections.
+    pub async fn new_with_connector(url: impl Into<String>, token: impl Into<String>, connector: C) -> Result<Self>
+
+    {
         let token = token.into();
         let token = if token.is_empty() { None } else { Some(token) };
         let url = url.into();
 
-        let (client, client_future) = hrana_client::Client::connect(&url, token.clone()).await?;
+        let (client, client_future) = hrana_client::Client::with_connector(&url, token.clone(), connector.clone()).await?;
 
         Ok(Self {
             url,
@@ -45,15 +55,28 @@ impl Client {
             client,
             client_future,
             streams_for_transactions: RwLock::new(HashMap::new()),
+            connector,
         })
     }
 
     pub async fn reconnect(&mut self) -> Result<()> {
         let (client, client_future) =
-            hrana_client::Client::connect(&self.url, self.token.clone()).await?;
+            hrana_client::Client::with_connector(&self.url, self.token.clone(), self.connector.clone()).await?;
         self.client = client;
         self.client_future = client_future;
         Ok(())
+    }
+}
+
+impl Client {
+    /// Creates a database client with JWT authentication.
+    ///
+    /// # Arguments
+    /// * `url` - URL of the database endpoint
+    /// * `token` - auth token
+    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Result<Self> {
+        let connector = HttpConnector::new();
+        Self::new_with_connector(url, token, connector).await
     }
 
     /// Creates a database client, given a `Url`

@@ -1,5 +1,9 @@
 //! [Client] is the main structure to interact with the database.
 use anyhow::Result;
+use hyper::{client::HttpConnector, Uri};
+use hyper::client::connect::Connection as HyperConnection;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tower::{make::MakeConnection, Service};
 
 use crate::{proto, BatchResult, ResultSet, Statement, SyncTransaction, Transaction};
 
@@ -9,7 +13,7 @@ static TRANSACTION_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// It's a convenience struct which allows implementing connect()
 /// with backends being passed as env parameters.
 #[derive(Debug)]
-pub enum Client {
+pub enum Client<C = HttpConnector> {
     #[cfg(feature = "local_backend")]
     Local(crate::local::Client),
     #[cfg(any(
@@ -17,7 +21,7 @@ pub enum Client {
         feature = "workers_backend",
         feature = "spin_backend"
     ))]
-    Http(crate::http::Client),
+    Http(crate::http::Client<C>),
     #[cfg(feature = "hrana_backend")]
     Hrana(crate::hrana::Client),
     Default,
@@ -29,7 +33,7 @@ pub struct SyncClient {
     inner: Client,
 }
 
-unsafe impl Send for Client {}
+unsafe impl<C: Send> Send for Client<C> {}
 
 impl Client {
     /// Executes a batch of independent SQL statements.
@@ -267,6 +271,55 @@ impl Client {
     }
 }
 
+impl<C> Client<C> 
+where 
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: HyperConnection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    pub async fn from_config_with_connector(mut config: Config, connector: C) -> anyhow::Result<Client<C>>
+    where
+        C: MakeConnection<Uri>,
+    {
+        config.url = if config.url.scheme() == "libsql" {
+            // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
+            // Safe to unwrap, because we know that the scheme is libsql
+            url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
+        } else {
+            config.url
+        };
+        let scheme = config.url.scheme();
+        Ok(match scheme {
+            #[cfg(feature = "local_backend")]
+            "file" => {
+                Client::Local(crate::local::Client::new(config.url.to_string())?)
+            },
+            #[cfg(feature = "hrana_backend")]
+            "ws" | "wss" => {
+                Client::Hrana(crate::hrana::Client::from_config(config).await?)
+            },
+            #[cfg(feature = "reqwest_backend")]
+            "http" | "https" => {
+                let inner = crate::http::InnerClient::Reqwest(crate::hyper::HttpClient::with_connector(connector));
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            #[cfg(feature = "workers_backend")]
+            "workers" | "http" | "https" => {
+                let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            #[cfg(feature = "spin_backend")]
+            "spin" | "http" | "https" => {
+                let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
+                Client::Http(crate::http::Client::from_config(inner, config)?)
+            },
+            _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
+        })
+    }
+
+}
+
 impl Client {
     /// Creates an in-memory database
     ///
@@ -298,41 +351,9 @@ impl Client {
     /// # }
     /// ```
     #[allow(unreachable_patterns)]
-    pub async fn from_config<'a>(mut config: Config) -> anyhow::Result<Client> {
-        config.url = if config.url.scheme() == "libsql" {
-            // We cannot use url::Url::set_scheme() because it prevents changing the scheme to http...
-            // Safe to unwrap, because we know that the scheme is libsql
-            url::Url::parse(&config.url.as_str().replace("libsql://", "https://")).unwrap()
-        } else {
-            config.url
-        };
-        let scheme = config.url.scheme();
-        Ok(match scheme {
-            #[cfg(feature = "local_backend")]
-            "file" => {
-                Client::Local(crate::local::Client::new(config.url.to_string())?)
-            },
-            #[cfg(feature = "hrana_backend")]
-            "ws" | "wss" => {
-                Client::Hrana(crate::hrana::Client::from_config(config).await?)
-            },
-            #[cfg(feature = "reqwest_backend")]
-            "http" | "https" => {
-                let inner = crate::http::InnerClient::Reqwest(crate::hyper::HttpClient::new());
-                Client::Http(crate::http::Client::from_config(inner, config)?)
-            },
-            #[cfg(feature = "workers_backend")]
-            "workers" | "http" | "https" => {
-                let inner = crate::http::InnerClient::Workers(crate::workers::HttpClient::new());
-                Client::Http(crate::http::Client::from_config(inner, config)?)
-            },
-            #[cfg(feature = "spin_backend")]
-            "spin" | "http" | "https" => {
-                let inner = crate::http::InnerClient::Spin(crate::spin::HttpClient::new());
-                Client::Http(crate::http::Client::from_config(inner, config)?)
-            },
-            _ => anyhow::bail!("Unknown scheme: {scheme}. Make sure your backend exists and is enabled with its feature flag"),
-        })
+    pub async fn from_config(config: Config) -> anyhow::Result<Client> {
+        let connector = HttpConnector::new();
+        Self::from_config_with_connector(config, connector).await
     }
 
     /// Establishes a database client based on environment variables

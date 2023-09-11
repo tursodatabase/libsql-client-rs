@@ -1,6 +1,9 @@
 use crate::client::Config;
-use crate::hyper::HttpsConnector;
 use anyhow::Result;
+use hyper::Uri;
+use hyper::client::connect::Connection as HyperConnection;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tower::Service;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -17,7 +20,7 @@ struct Cookie {
 /// Generic HTTP client. Needs a helper function that actually sends
 /// the request.
 #[derive(Clone, Debug)]
-pub struct Client<C = HttpsConnector> {
+pub struct Client<C> {
     inner: InnerClient<C>,
     cookies: Arc<RwLock<HashMap<u64, Cookie>>>,
     url_for_queries: String,
@@ -25,7 +28,7 @@ pub struct Client<C = HttpsConnector> {
 }
 
 #[derive(Clone, Debug)]
-pub enum InnerClient<C = HttpsConnector> {
+pub enum InnerClient<C> {
     #[cfg(feature = "reqwest_backend")]
     Reqwest(crate::hyper::HttpClient<C>),
     #[cfg(feature = "workers_backend")]
@@ -35,7 +38,13 @@ pub enum InnerClient<C = HttpsConnector> {
     Default,
 }
 
-impl InnerClient {
+impl<C> InnerClient<C>
+where
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: HyperConnection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     pub async fn send(
         &self,
         url: String,
@@ -87,7 +96,7 @@ impl<C> Client<C> {
         ))
     }
 
-    pub fn from_env(inner: InnerClient) -> anyhow::Result<Client> {
+    pub fn from_env(inner: InnerClient<C>) -> anyhow::Result<Self> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
         })?;
@@ -97,7 +106,13 @@ impl<C> Client<C> {
     }
 }
 
-impl Client {
+impl<C> Client<C>
+where 
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: HyperConnection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     fn into_hrana(stmt: Statement) -> crate::proto::Stmt {
         let mut hrana_stmt = crate::proto::Stmt::new(stmt.sql, true);
         for param in stmt.args {
