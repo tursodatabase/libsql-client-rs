@@ -167,7 +167,7 @@ pub use transaction::{SyncTransaction, Transaction};
 pub mod workers;
 
 #[cfg(feature = "reqwest_backend")]
-pub mod reqwest;
+pub mod hyper;
 
 #[cfg(feature = "local_backend")]
 pub mod local;

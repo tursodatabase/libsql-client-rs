@@ -318,7 +318,7 @@ impl Client {
             },
             #[cfg(feature = "reqwest_backend")]
             "http" | "https" => {
-                let inner = crate::http::InnerClient::Reqwest(crate::reqwest::HttpClient::new());
+                let inner = crate::http::InnerClient::Reqwest(crate::hyper::HttpClient::new());
                 Client::Http(crate::http::Client::from_config(inner, config)?)
             },
             #[cfg(feature = "workers_backend")]

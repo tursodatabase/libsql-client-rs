@@ -1,4 +1,5 @@
 use crate::client::Config;
+use crate::hyper::HttpsConnector;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -16,17 +17,17 @@ struct Cookie {
 /// Generic HTTP client. Needs a helper function that actually sends
 /// the request.
 #[derive(Clone, Debug)]
-pub struct Client {
-    inner: InnerClient,
+pub struct Client<C = HttpsConnector> {
+    inner: InnerClient<C>,
     cookies: Arc<RwLock<HashMap<u64, Cookie>>>,
     url_for_queries: String,
     auth: String,
 }
 
 #[derive(Clone, Debug)]
-pub enum InnerClient {
+pub enum InnerClient<C = HttpsConnector> {
     #[cfg(feature = "reqwest_backend")]
-    Reqwest(crate::reqwest::HttpClient),
+    Reqwest(crate::hyper::HttpClient<C>),
     #[cfg(feature = "workers_backend")]
     Workers(crate::workers::HttpClient),
     #[cfg(feature = "spin_backend")]
@@ -53,13 +54,13 @@ impl InnerClient {
     }
 }
 
-impl Client {
+impl<C> Client<C> {
     /// Creates a database client with JWT authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub fn new(inner: InnerClient, url: impl Into<String>, token: impl Into<String>) -> Self {
+    pub fn new(inner: InnerClient<C>, url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
@@ -78,7 +79,7 @@ impl Client {
     }
 
     /// Establishes  a database client from a `Config` object
-    pub fn from_config(inner: InnerClient, config: Config) -> anyhow::Result<Self> {
+    pub fn from_config(inner: InnerClient<C>, config: Config) -> anyhow::Result<Self> {
         Ok(Self::new(
             inner,
             config.url,
