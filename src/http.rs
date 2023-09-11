@@ -1,5 +1,9 @@
 use crate::client::Config;
 use anyhow::Result;
+use hyper::Uri;
+use hyper::client::connect::Connection as HyperConnection;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tower::Service;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -16,17 +20,17 @@ struct Cookie {
 /// Generic HTTP client. Needs a helper function that actually sends
 /// the request.
 #[derive(Clone, Debug)]
-pub struct Client {
-    inner: InnerClient,
+pub struct Client<C> {
+    inner: InnerClient<C>,
     cookies: Arc<RwLock<HashMap<u64, Cookie>>>,
     url_for_queries: String,
     auth: String,
 }
 
 #[derive(Clone, Debug)]
-pub enum InnerClient {
+pub enum InnerClient<C> {
     #[cfg(feature = "reqwest_backend")]
-    Reqwest(crate::reqwest::HttpClient),
+    Reqwest(crate::hyper::HttpClient<C>),
     #[cfg(feature = "workers_backend")]
     Workers(crate::workers::HttpClient),
     #[cfg(feature = "spin_backend")]
@@ -34,7 +38,13 @@ pub enum InnerClient {
     Default,
 }
 
-impl InnerClient {
+impl<C> InnerClient<C>
+where
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: HyperConnection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     pub async fn send(
         &self,
         url: String,
@@ -53,13 +63,13 @@ impl InnerClient {
     }
 }
 
-impl Client {
+impl<C> Client<C> {
     /// Creates a database client with JWT authentication.
     ///
     /// # Arguments
     /// * `url` - URL of the database endpoint
     /// * `token` - auth token
-    pub fn new(inner: InnerClient, url: impl Into<String>, token: impl Into<String>) -> Self {
+    pub fn new(inner: InnerClient<C>, url: impl Into<String>, token: impl Into<String>) -> Self {
         let token = token.into();
         let url = url.into();
         // Auto-update the URL to start with https:// if no protocol was specified
@@ -78,7 +88,7 @@ impl Client {
     }
 
     /// Establishes  a database client from a `Config` object
-    pub fn from_config(inner: InnerClient, config: Config) -> anyhow::Result<Self> {
+    pub fn from_config(inner: InnerClient<C>, config: Config) -> anyhow::Result<Self> {
         Ok(Self::new(
             inner,
             config.url,
@@ -86,7 +96,7 @@ impl Client {
         ))
     }
 
-    pub fn from_env(inner: InnerClient) -> anyhow::Result<Client> {
+    pub fn from_env(inner: InnerClient<C>) -> anyhow::Result<Self> {
         let url = std::env::var("LIBSQL_CLIENT_URL").map_err(|_| {
             anyhow::anyhow!("LIBSQL_CLIENT_URL variable should point to your sqld database")
         })?;
@@ -96,7 +106,13 @@ impl Client {
     }
 }
 
-impl Client {
+impl<C> Client<C>
+where 
+    C: Service<Uri> + Send + Clone + Sync + 'static,
+    C::Response: HyperConnection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     fn into_hrana(stmt: Statement) -> crate::proto::Stmt {
         let mut hrana_stmt = crate::proto::Stmt::new(stmt.sql, true);
         for param in stmt.args {

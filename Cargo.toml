@@ -20,20 +20,26 @@ sqlite3-parser = { version = "0.8.0", default-features = false, features = [ "YY
 http = { version = "0.2", optional = true }
 bytes = { version = "1.4.0", optional = true }
 anyhow = "1.0.69"
-reqwest = { version = "0.11.14", optional = true, default-features = false, features = ["rustls-tls"] }
-hrana-client = { version = "0.3", optional = true }
-hrana-client-proto = { version = "0.2" }
+hyper = { version = "0.14.27", optional = true, default-features = false }
+hyper-rustls = { version = "0.24.1", optional = true, features = ["http2"] }
+# hrana-client = { version = "0.3", optional = true }
+hrana-client = { git = "https://github.com/libsql/hrana-client-rs.git", rev = "1cb37f1", optional = true }
+# hrana-client-proto = { version = "0.2" }
+hrana-client-proto = { git = "https://github.com/libsql/hrana-client-rs.git", rev = "1cb37f1" }
 futures-util = { version = "0.3.21", optional = true }
 serde = "1.0.159"
 tracing = "0.1.37"
 futures = "0.3.28"
 fallible-iterator = "0.2.0"
 libsql = { version = "0.1.6", optional = true }
+tower = { version = "0.4.13", features = ["make"] }
+tokio = { version = "1", default-features = false, optional = true }
 
 [features]
 default = ["local_backend", "hrana_backend", "reqwest_backend", "mapping_names_to_values_in_rows"]
 workers_backend = ["worker", "futures-util"]
-reqwest_backend = ["reqwest"]
+reqwest_backend = ["hyper_backend"]
+hyper_backend = ["hyper", "hyper-rustls", "tokio"]
 local_backend = ["libsql"]
 spin_backend = ["spin-sdk", "http", "bytes"]
 hrana_backend = ["hrana-client"]
