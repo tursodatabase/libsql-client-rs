@@ -10,9 +10,9 @@ At the moment the library works with the following backends:
 
 ## Quickstart
 
-In order to use the database in your project, just call `libsql_client::new_client()`:
+In order to use the database in your project, just call `libsql_client::Client::from_env()`, or any of the other [constructors](https://docs.rs/libsql-client/latest/libsql_client/client/enum.Client.html):
 ```rust
-    let db = libsql_client::new_client().await?;
+let db = libsql_client::Client::from_env().await?;
 ```
 
 The only thing you need to provide is an env variable with the database URL, e.g.
@@ -42,28 +42,6 @@ cargo add libsql-client
 Example for how to connect to the database and perform a query:
 ```rust
     let db = libsql_client::local::Client::from_env()?;
-    let response = db
-        .execute("SELECT * FROM table WHERE key = 'key1'")
-        .await?;
-    (...)
-```
-
-
-### Reqwest
-In order to connect to the database, set up the following env variables:
-```
-export LIBSQL_CLIENT_URL = "https://your-db-url.example.com"
-export LIBSQL_CLIENT_TOKEN = "<your-jwt>"
-```
-
-`reqwest_backend` feature is enabled by default, so add the dependency like this:
-```
-cargo add libsql-client
-```
-
-Example for how to connect to the database and perform a query from a GET handler:
-```rust
-    let db = libsql_client::reqwest::Client::from_env()?;
     let response = db
         .execute("SELECT * FROM table WHERE key = 'key1'")
         .await?;
