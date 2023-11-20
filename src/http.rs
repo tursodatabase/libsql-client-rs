@@ -170,11 +170,19 @@ impl Client {
         } else {
             Cookie::default()
         };
+        let requests = if tx_id != 0 {
+            vec![pipeline::StreamRequest::Execute(
+                pipeline::StreamExecuteReq { stmt },
+            )]
+        } else {
+            vec![
+                pipeline::StreamRequest::Execute(pipeline::StreamExecuteReq { stmt }),
+                pipeline::StreamRequest::Close,
+            ]
+        };
         let msg = pipeline::ClientMsg {
             baton: cookie.baton,
-            requests: vec![pipeline::StreamRequest::Execute(
-                pipeline::StreamExecuteReq { stmt },
-            )],
+            requests,
         };
         let body = serde_json::to_string(&msg)?;
         let url = cookie
