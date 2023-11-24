@@ -213,7 +213,8 @@ impl Client {
                 response.results
             );
         }
-        if response.results.len() > 1 {
+        if response.results.len() > 2 {
+            // One with actual results, one closing the stream
             anyhow::bail!(
                 "Unexpected multiple responses from server: {:?}",
                 response.results
