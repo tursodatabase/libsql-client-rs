@@ -22,6 +22,7 @@ use crate::Row;
 /// - Vec<u8>
 /// - i64
 /// - f64
+/// - Option<T> (where T is any of the above)
 /// - ()
 ///
 /// # Example
@@ -146,9 +147,26 @@ impl<'de> Deserializer<'de> for V<'de> {
         }
     }
 
+    #[inline]
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.0 {
+            Value::Text { value } => visitor.visit_some(value.to_string().into_deserializer()),
+            Value::Null => visitor.visit_none(),
+            Value::Float { value } => visitor.visit_some(value.into_deserializer()),
+            Value::Integer { value } => visitor.visit_some(value.into_deserializer()),
+            Value::Blob { value } => {
+                let seq = SeqDeserializer::new(value.iter().cloned());
+                visitor.visit_some(seq)
+            }
+        }
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        bytes byte_buf unit unit_struct newtype_struct seq tuple
         tuple_struct map enum struct identifier ignored_any
     }
 }
@@ -168,6 +186,9 @@ mod tests {
         baz: i64,
         bab: Vec<u8>,
         ban: (),
+        bad: Option<i64>,
+        bac: Option<f64>,
+        bag: Option<Vec<u8>>,
     }
 
     #[test]
@@ -196,6 +217,15 @@ mod tests {
             },
         );
         row.value_map.insert("ban".to_string(), Value::Null);
+        row.value_map
+            .insert("bad".to_string(), Value::Integer { value: 42 });
+        row.value_map.insert("bac".to_string(), Value::Null);
+        row.value_map.insert(
+            "bag".to_string(),
+            Value::Blob {
+                value: vec![6u8; 128],
+            },
+        );
 
         let foo = from_row::<Foo>(&row).unwrap();
 
@@ -204,5 +234,8 @@ mod tests {
         assert!(foo.baf > 41.0);
         assert!(foo.baf2 > 42.0);
         assert_eq!(foo.bab, vec![6u8; 128]);
+        assert_eq!(foo.bad, Some(42));
+        assert_eq!(foo.bac, None);
+        assert_eq!(foo.bag, Some(vec![6u8; 128]));
     }
 }
