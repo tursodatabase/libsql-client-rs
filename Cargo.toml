@@ -15,23 +15,34 @@ base64 = "0.21.0"
 num-traits = "0.2.15"
 serde_json = "1.0.91"
 worker = { version = "0.0.18", optional = true }
-spin-sdk = { version = "2.0", git = "https://github.com/fermyon/spin", tag = "v2.0.0", default-features = false, features = ["http"], optional = true }
-sqlite3-parser = { version = "0.8.0", default-features = false, features = [ "YYNOERRORRECOVERY" ] }
+spin-sdk = { version = "2.0", git = "https://github.com/fermyon/spin", tag = "v2.0.0", default-features = false, features = [
+    "http",
+], optional = true }
+sqlite3-parser = { version = "0.12.0", default-features = false, features = [
+    "YYNOERRORRECOVERY",
+] }
 http = { version = "0.2", optional = true }
 bytes = { version = "1.4.0", optional = true }
 anyhow = "1.0.69"
-reqwest = { version = "0.11.14", optional = true, default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.11.14", optional = true, default-features = false, features = [
+    "rustls-tls",
+] }
 hrana-client = { version = "0.3", optional = true }
 hrana-client-proto = { version = "0.2" }
 futures-util = { version = "0.3.21", optional = true }
 serde = "1.0.159"
 tracing = "0.1.37"
 futures = "0.3.28"
-fallible-iterator = "0.2.0"
+fallible-iterator = "0.3.0"
 libsql = { version = "=0.1.8", optional = true }
 
 [features]
-default = ["local_backend", "hrana_backend", "reqwest_backend", "mapping_names_to_values_in_rows"]
+default = [
+    "local_backend",
+    "hrana_backend",
+    "reqwest_backend",
+    "mapping_names_to_values_in_rows",
+]
 workers_backend = ["worker", "futures-util"]
 reqwest_backend = ["reqwest"]
 local_backend = ["libsql"]
