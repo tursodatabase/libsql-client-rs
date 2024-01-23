@@ -15,7 +15,7 @@ base64 = "0.21.0"
 num-traits = "0.2.15"
 serde_json = "1.0.91"
 worker = { version = "0.0.18", optional = true }
-spin-sdk = { version = "2.0", git = "https://github.com/fermyon/spin", tag = "v2.0.0", default-features = false, features = [
+spin-sdk = { git = "https://github.com/fermyon/spin", default-features = false, features = [
     "http",
 ], optional = true }
 sqlite3-parser = { version = "0.12.0", default-features = false, features = [
