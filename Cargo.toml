@@ -1,6 +1,6 @@
 [package]
 name = "libsql-client"
-version = "0.33.3"
+version = "0.33.4"
 edition = "2021"
 license = "Apache-2.0"
 description = "HTTP-based client for libSQL and sqld"
@@ -17,6 +17,7 @@ serde_json = "1.0.91"
 worker = { version = "0.0.18", optional = true }
 spin-sdk = { version = "2.1", default-features = false, features = [
     "http",
+    "json",
 ], optional = true }
 sqlite3-parser = { version = "0.12.0", default-features = false, features = [
     "YYNOERRORRECOVERY",
