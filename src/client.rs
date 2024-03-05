@@ -57,7 +57,7 @@ impl Client {
     ) -> Result<BatchResult> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.raw_batch(stmts),
+            Self::Local(l) => l.raw_batch(stmts).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -179,7 +179,7 @@ impl Client {
     pub async fn execute(&self, stmt: impl Into<Statement> + Send) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute(stmt),
+            Self::Local(l) => l.execute(stmt).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -218,7 +218,7 @@ impl Client {
     ) -> Result<ResultSet> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.execute_in_transaction(tx_id, stmt),
+            Self::Local(l) => l.execute_in_transaction(tx_id, stmt).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -235,7 +235,7 @@ impl Client {
     pub(crate) async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.commit_transaction(tx_id),
+            Self::Local(l) => l.commit_transaction(tx_id).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
@@ -252,7 +252,7 @@ impl Client {
     pub(crate) async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         match self {
             #[cfg(feature = "local_backend")]
-            Self::Local(l) => l.rollback_transaction(tx_id),
+            Self::Local(l) => l.rollback_transaction(tx_id).await,
             #[cfg(any(
                 feature = "reqwest_backend",
                 feature = "workers_backend",
