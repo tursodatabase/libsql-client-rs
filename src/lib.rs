@@ -6,6 +6,11 @@
 //! libsql-client compiles to wasm32-unknown-unknown target, which makes it a great
 //! driver for environments that run on WebAssembly.
 //!
+#![deprecated(
+    since = "0.33",
+    note = "this crate has been deprecated, please use the `libsql` crate instead"
+)]
+
 pub mod statement;
 pub use statement::Statement;
 
