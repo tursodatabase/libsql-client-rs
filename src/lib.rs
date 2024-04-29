@@ -7,7 +7,7 @@
 //! driver for environments that run on WebAssembly.
 //!
 #![deprecated(
-    since = "0.33",
+    since = "0.33.0",
     note = "this crate has been deprecated, please use the `libsql` crate instead"
 )]
 
