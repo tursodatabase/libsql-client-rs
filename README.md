@@ -75,3 +75,13 @@ router.get_async("/", |_, ctx| async move {
         .await?;
     (...)
 ```
+
+Actually the latest version is a bit different:
+```rust
+    #[allow(deprecated)]
+    // Uses secrets "LIBSQL_CLIENT_URL" and "LIBSQL_CLIENT_TOKEN"
+    let client = libsql_client::Client::from_workers_env(&env).unwrap();
+
+    #[allow(deprecated)]
+    client.execute("SELECT * FROM members").await.unwrap();
+```
