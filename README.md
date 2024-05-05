@@ -76,7 +76,7 @@ router.get_async("/", |_, ctx| async move {
     (...)
 ```
 
-Actually the latest version is a bit different:
+The latest version from git is a bit different:
 ```rust
     #[allow(deprecated)]
     // Uses secrets "LIBSQL_CLIENT_URL" and "LIBSQL_CLIENT_TOKEN"
