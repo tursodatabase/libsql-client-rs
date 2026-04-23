@@ -73,6 +73,7 @@ impl Client {
         Self::new(path)
     }
 
+    #[deprecated(note = "sync() is deprecated and will be removed in a future release. Use the `turso` crate instead. Learn more: https://tur.so/newsync")]
     pub async fn sync(&self) -> anyhow::Result<usize> {
         self.db.sync().await.map_err(|e| anyhow::anyhow!("{}", e))
     }
