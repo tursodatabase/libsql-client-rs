@@ -22,6 +22,7 @@ use crate::Row;
 /// - Vec<u8>
 /// - i64
 /// - f64
+/// - bool
 /// - Option<T> (where T is any of the above)
 /// - ()
 ///
@@ -153,19 +154,25 @@ impl<'de> Deserializer<'de> for V<'de> {
         V: Visitor<'de>,
     {
         match self.0 {
-            Value::Text { value } => visitor.visit_some(value.to_string().into_deserializer()),
             Value::Null => visitor.visit_none(),
-            Value::Float { value } => visitor.visit_some(value.into_deserializer()),
-            Value::Integer { value } => visitor.visit_some(value.into_deserializer()),
-            Value::Blob { value } => {
-                let seq = SeqDeserializer::new(value.iter().cloned());
-                visitor.visit_some(seq)
-            }
+            _ => visitor.visit_some(self),
+        }
+    }
+
+    #[inline]
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.0 {
+            Value::Integer { value: 1 } => visitor.visit_bool(true),
+            Value::Integer { value: 0 } => visitor.visit_bool(false),
+            _ => Err(DeError::custom("Expects a bool")),
         }
     }
 
     serde::forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf unit unit_struct newtype_struct seq tuple
         tuple_struct map enum struct identifier ignored_any
     }
@@ -189,6 +196,8 @@ mod tests {
         bad: Option<i64>,
         bac: Option<f64>,
         bag: Option<Vec<u8>>,
+        bah: bool,
+        bax: Option<bool>,
     }
 
     #[test]
@@ -226,6 +235,10 @@ mod tests {
                 value: vec![6u8; 128],
             },
         );
+        row.value_map
+            .insert("bah".to_string(), Value::Integer { value: 1 });
+        row.value_map
+            .insert("bax".to_string(), Value::Integer { value: 0 });
 
         let foo = from_row::<Foo>(&row).unwrap();
 
@@ -237,5 +250,7 @@ mod tests {
         assert_eq!(foo.bad, Some(42));
         assert_eq!(foo.bac, None);
         assert_eq!(foo.bag, Some(vec![6u8; 128]));
+        assert!(foo.bah);
+        assert_eq!(foo.bax, Some(false));
     }
 }
