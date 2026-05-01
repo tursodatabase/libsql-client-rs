@@ -14,7 +14,7 @@ url = "2.3.1"
 base64 = "0.21.0"
 num-traits = "0.2.15"
 serde_json = "1.0.91"
-worker = { version = "0.0.18", optional = true }
+worker = { version = "0.2.0", optional = true }
 spin-sdk = { version = "2.1", default-features = false, features = [
     "http",
     "json",
